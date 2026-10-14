@@ -11,20 +11,31 @@ use std::sync::atomic::AtomicBool;
 fn tone_segment(path: &std::path::Path, secs: f64) {
     let n = (24_000.0 * secs) as usize;
     let mut w = WavWriter::create(path, 1, 24_000).unwrap();
-    let pcm: Vec<i16> = (0..n).map(|i| ((i as f32 / 24_000.0 * 220.0 * std::f32::consts::TAU).sin() * 12_000.0) as i16).collect();
+    let pcm: Vec<i16> = (0..n)
+        .map(|i| ((i as f32 / 24_000.0 * 220.0 * std::f32::consts::TAU).sin() * 12_000.0) as i16)
+        .collect();
     w.write_i16(&pcm).unwrap();
     w.finalize().unwrap();
 }
 
 fn decoded_duration(path: &std::path::Path) -> f64 {
     let dir = tempfile::tempdir().unwrap();
-    prepare_audio(path, &dir.path().join("d.wav"), &AtomicBool::new(false), |_| {}).unwrap().duration_s
+    prepare_audio(
+        path,
+        &dir.path().join("d.wav"),
+        &AtomicBool::new(false),
+        |_| {},
+    )
+    .unwrap()
+    .duration_s
 }
 
 #[test]
 fn wav_export_concatenates_segments_exactly() {
     let dir = tempfile::tempdir().unwrap();
-    let segs: Vec<PathBuf> = (0..3).map(|i| dir.path().join(format!("s{i}.wav"))).collect();
+    let segs: Vec<PathBuf> = (0..3)
+        .map(|i| dir.path().join(format!("s{i}.wav")))
+        .collect();
     for (i, s) in segs.iter().enumerate() {
         tone_segment(s, 1.0 + i as f64);
     }
@@ -40,7 +51,9 @@ fn wav_export_concatenates_segments_exactly() {
 #[test]
 fn mp3_export_is_decodable_with_matching_duration() {
     let dir = tempfile::tempdir().unwrap();
-    let segs: Vec<PathBuf> = (0..2).map(|i| dir.path().join(format!("s{i}.wav"))).collect();
+    let segs: Vec<PathBuf> = (0..2)
+        .map(|i| dir.path().join(format!("s{i}.wav")))
+        .collect();
     for s in &segs {
         tone_segment(s, 3.0);
     }
@@ -48,7 +61,10 @@ fn mp3_export_is_decodable_with_matching_duration() {
     export_mp3(&segs, &out, 96).unwrap();
     let size = std::fs::metadata(&out).unwrap().len();
     // 96 kbps CBR ≈ 12 kB/s
-    assert!((60_000..90_000).contains(&size), "{size} bytes for 6 s at 96 kbps");
+    assert!(
+        (60_000..90_000).contains(&size),
+        "{size} bytes for 6 s at 96 kbps"
+    );
     let d = decoded_duration(&out);
     assert!((d - 6.0).abs() <= 0.1, "decoded duration {d}");
 }
@@ -72,7 +88,7 @@ fn wav_over_4gb_is_refused_with_a_helpful_message_before_writing() {
         other => panic!("expected a size-limit error, got {other:?}"),
     }
     assert!(!out.exists() && !out.with_extension("part").exists());
-    assert!(5_000_000_000 > MAX_DATA_BYTES);
+    const { assert!(5_000_000_000 > MAX_DATA_BYTES) };
 }
 
 #[test]
@@ -82,7 +98,12 @@ fn m4a_is_unavailable_on_linux_with_a_clear_error() {
         fn is_available(&self) -> bool {
             false
         }
-        fn encode_wav_to_m4a(&self, _: &std::path::Path, _: &std::path::Path, _: u32) -> parlo_core::Result<()> {
+        fn encode_wav_to_m4a(
+            &self,
+            _: &std::path::Path,
+            _: &std::path::Path,
+            _: u32,
+        ) -> parlo_core::Result<()> {
             unreachable!()
         }
     }

@@ -13,3 +13,16 @@ pub fn fixture(rel: &str) -> PathBuf {
     );
     p
 }
+
+/// Absolute path to `models/<rel>` at the repo root; fails loudly if missing (fetch with scripts/fetch-models.sh).
+pub fn model(rel: &str) -> PathBuf {
+    let p = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../models")
+        .join(rel);
+    assert!(
+        p.exists(),
+        "model {} is missing. Fetch it: scripts/fetch-models.sh",
+        p.display()
+    );
+    p
+}

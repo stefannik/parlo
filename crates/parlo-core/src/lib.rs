@@ -10,3 +10,4 @@ pub fn version() -> &'static str {
 }
 pub mod platform;
 pub mod recorder;
+pub mod stt;

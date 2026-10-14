@@ -85,3 +85,55 @@ pub fn free_disk_bytes(path: &Path) -> std::io::Result<u64> {
     }
     Ok((st.f_bavail as u64).saturating_mul(st.f_frsize as u64))
 }
+
+/// Where model files live (BRIEF §5.5): `Parlo.app/Contents/Resources/models/` in production, `<repo>/models/` in dev.
+/// This is the only place that knows; everything else asks `ModelPaths`.
+#[derive(Debug, Clone)]
+pub struct ModelPaths {
+    pub root: PathBuf,
+}
+
+impl ModelPaths {
+    pub fn new(root: impl Into<PathBuf>) -> Self {
+        Self { root: root.into() }
+    }
+
+    /// Resolution order: `PARLO_MODELS` env → `<exe>/../Resources/models` (app bundle) → `./models` and ancestors.
+    pub fn discover() -> Self {
+        if let Some(p) = std::env::var_os("PARLO_MODELS") {
+            return Self::new(p);
+        }
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(res) = exe
+                .parent()
+                .and_then(|d| d.parent())
+                .map(|c| c.join("Resources/models"))
+            {
+                if res.is_dir() {
+                    return Self::new(res);
+                }
+            }
+        }
+        let mut dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        loop {
+            let m = dir.join("models");
+            if m.join("manifest.toml").exists() {
+                return Self::new(m);
+            }
+            if !dir.pop() {
+                break;
+            }
+        }
+        Self::new("models")
+    }
+
+    pub fn whisper(&self, file: &str) -> PathBuf {
+        self.root.join("whisper").join(file)
+    }
+    pub fn vad(&self) -> PathBuf {
+        self.root.join("vad").join("ggml-silero-v5.1.2.bin")
+    }
+    pub fn pockettts(&self) -> PathBuf {
+        self.root.join("pockettts")
+    }
+}

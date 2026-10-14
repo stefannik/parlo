@@ -38,6 +38,32 @@ enum Cmd {
         #[arg(long)]
         device: Option<String>,
     },
+    /// Transcribe an audio/video file (VAD → chunks → whisper → paragraphs), checkpointing every chunk
+    Transcribe {
+        input: PathBuf,
+        /// whisper model file name under models/whisper/ (or a path)
+        #[arg(long, default_value = "ggml-large-v3-turbo-q8_0.bin")]
+        model: String,
+        /// "auto" or an ISO-639-1 code
+        #[arg(long, default_value = "auto")]
+        language: String,
+        #[arg(long, default_value_t = 4)]
+        threads: usize,
+        /// job directory (checkpoints); default: a temp dir under the cache
+        #[arg(long)]
+        job_dir: Option<PathBuf>,
+        #[arg(long)]
+        cache_dir: Option<PathBuf>,
+        /// print the result as JSON
+        #[arg(long)]
+        json: bool,
+        /// beam size (1 = greedy)
+        #[arg(long, default_value_t = 1)]
+        beam: i32,
+        /// carry the previous chunk's tail as decoder context
+        #[arg(long)]
+        carry_prompt: bool,
+    },
     /// Repair interrupted recordings in DIR (header repair from file length) and list recoverable ones
     Recover { dir: PathBuf },
     /// List audio input devices
@@ -73,6 +99,27 @@ fn run(cli: Cli) -> parlo_core::Result<()> {
                 t.elapsed().as_secs_f64()
             );
         }
+        Cmd::Transcribe {
+            input,
+            model,
+            language,
+            threads,
+            job_dir,
+            cache_dir,
+            json,
+            beam,
+            carry_prompt,
+        } => transcribe(
+            input,
+            model,
+            language,
+            threads,
+            job_dir,
+            cache_dir,
+            json,
+            beam,
+            carry_prompt,
+        )?,
         Cmd::Devices => {
             let input = parlo_core::platform::cpal_input::CpalInput::new();
             for d in parlo_core::platform::AudioInput::devices(&input)? {
@@ -191,5 +238,98 @@ fn record(
     }
     let info = h.stop()?;
     println!("{}", serde_json::to_string(&info.sidecar).unwrap());
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn transcribe(
+    input: PathBuf,
+    model: String,
+    language: String,
+    threads: usize,
+    job_dir: Option<PathBuf>,
+    cache_dir: Option<PathBuf>,
+    json: bool,
+    beam: i32,
+    carry_prompt: bool,
+) -> parlo_core::Result<()> {
+    use parlo_core::paths::{AppPaths, ModelPaths};
+    use parlo_core::stt::pipeline::{run_transcription, LanguageSetting, SttEvent, SttJob};
+    use parlo_core::stt::whisper::{SileroVad, WhisperConfig, WhisperEngine};
+    use std::sync::Arc;
+    let mp = ModelPaths::discover();
+    let model_path = if std::path::Path::new(&model).exists() {
+        PathBuf::from(&model)
+    } else {
+        mp.whisper(&model)
+    };
+    let app = AppPaths::discover();
+    let mut job = SttJob::new(
+        &input,
+        job_dir.unwrap_or_else(|| app.jobs().join(format!("cli-{:x}", std::process::id()))),
+        cache_dir.unwrap_or_else(|| app.decode_cache()),
+    );
+    job.threads = threads;
+    job.carry_prompt = carry_prompt;
+    job.language = if language == "auto" {
+        LanguageSetting::Auto
+    } else {
+        LanguageSetting::Code(language)
+    };
+    let t0 = std::time::Instant::now();
+    let mut engine = WhisperEngine::load(
+        &model_path,
+        WhisperConfig {
+            beam_size: beam,
+            ..Default::default()
+        },
+    )?;
+    let load_s = t0.elapsed().as_secs_f64();
+    let mut vad = SileroVad::load(&mp.vad(), 300)?;
+    let cancel = Arc::new(AtomicBool::new(false));
+    let c2 = cancel.clone();
+    ctrlc::set_handler(move || c2.store(true, std::sync::atomic::Ordering::SeqCst))
+        .map_err(|e| parlo_core::Error::Other(e.to_string()))?;
+    let mut last = std::time::Instant::now();
+    let t = run_transcription(
+        &job,
+        &mut engine,
+        &mut vad,
+        &mut |e: SttEvent| match e {
+            SttEvent::Stage(s) => eprintln!("[stage] {s:?}"),
+            SttEvent::Language(l) => eprintln!("[language] {} ({:.0}%)", l.code, l.prob * 100.0),
+            SttEvent::Progress {
+                done_s,
+                total_s,
+                eta_ms,
+            } if last.elapsed().as_secs_f64() > 2.0 => {
+                last = std::time::Instant::now();
+                eprintln!(
+                    "[progress] {:.0}/{:.0}s ETA {}",
+                    done_s,
+                    total_s,
+                    eta_ms
+                        .map(|m| format!("{}s", m / 1000))
+                        .unwrap_or_else(|| "?".into())
+                );
+            }
+            _ => {}
+        },
+        &cancel,
+    )?;
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({
+                "text": t.text, "language": t.language.as_ref().map(|l| &l.code), "language_prob": t.language.as_ref().map(|l| l.prob),
+                "duration_s": t.duration_s, "speech_s": t.speech_s, "words": t.word_count, "processing_s": t.processing_s, "model_load_s": load_s,
+                "rtf": t.processing_s / t.duration_s.max(1e-9), "chunks": t.chunks_total, "paragraphs": t.paragraphs.len(),
+                "segments": t.segments.iter().map(|s| serde_json::json!([s.start_s, s.end_s, s.text])).collect::<Vec<_>>(),
+            })
+        );
+    } else {
+        println!("{}", t.text);
+        eprintln!("[done] {:.1}s audio, {} words, {} paragraphs, language {:?}, processed in {:.1}s (RTF {:.2}), model load {:.1}s", t.duration_s, t.word_count, t.paragraphs.len(), t.language.map(|l| l.code), t.processing_s, t.processing_s / t.duration_s.max(1e-9), load_s);
+    }
     Ok(())
 }
