@@ -49,6 +49,7 @@ cargo test --workspace                   # the portable suite must pass on the M
 | C5 | Notification when a job finishes while no window is open; single-instance focus | not started | finish a job with the window closed |
 | C6 | ⌘Q while recording → "Stop and save / Cancel" dialog | not started | QA checklist |
 | C7 | Asset protocol scope (`outputs/`, range requests for seeking) and CSP (`default-src 'self'; connect-src ipc: http://ipc.localhost`; no remote origins) in WKWebView | not started | `scripts/check-offline.sh --app dist/Parlo.app` asserts the CSP and that no non-loopback sockets open |
+| C9 | Clipboard (`navigator.clipboard.writeText` with `execCommand` fallback, `ui/src/backend/real.ts`), file dialogs (`tauri-plugin-dialog`), drag-drop paths (`onDragDropEvent`), `<audio>` playback of `asset:` URLs with seeking and `playbackRate` + `preservesPitch` in WKWebView | not started | Copy transcript, drop a file, play + scrub + change speed on generated speech |
 | C8 | `Info.plist` (microphone usage string, document types for audio/video/text), entitlements (hardened runtime + `com.apple.security.device.audio-input`), minimum macOS 14 | not started | `codesign -d --entitlements - dist/Parlo.app` |
 
 ## D. Packaging, signing, measurements (BRIEF §12, §13)

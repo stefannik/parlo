@@ -32,6 +32,7 @@ npm --prefix ui run lint && npm --prefix ui run typecheck && npm --prefix ui run
 VITE_MOCK_BACKEND=1 npm --prefix ui run dev                # UI in a plain browser with fake engines/recorder (http://localhost:5173)
 PARLO_UPDATE_BINDINGS=1 cargo test -p parlo-app export_bindings   # regenerate ui/src/bindings.ts after changing src-tauri/src/ipc.rs (plain run = drift check)
 cargo build -p parlo-app --features tauri/custom-protocol && scripts/smoke-linux.sh   # app smoke run under Xvfb (software rendering)
+scripts/selftest-linux.sh                                  # E2E of the command layer with the REAL engines inside the real app (needs models + fixtures; ~3 min)
 (cd scripts/screenshots && npm ci && node shoot.mjs ../../docs/screenshots)          # Playwright-WebKit screenshots, every state, light+dark
 scripts/build-app.sh [--dmg]                               # macOS only (drafted): dist/Parlo.app
 cargo check --target aarch64-apple-darwin -p parlo-macos   # type-check the macOS platform code from Linux

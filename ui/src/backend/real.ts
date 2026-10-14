@@ -119,7 +119,21 @@ export class RealBackend implements Backend {
   }
 
   async copyText(text: string) {
-    // Plain WKWebView clipboard API: works from a user gesture, no plugin (and no permission prompt) required.
-    await navigator.clipboard.writeText(text)
+    // WKWebView clipboard API (needs a user gesture + secure context); the textarea/execCommand path is the fallback
+    // if the custom-protocol origin isn't treated as secure (verify on the Mac: docs/MAC_HANDOFF.md C9).
+    try {
+      await navigator.clipboard.writeText(text)
+      return
+    } catch {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.select()
+      const ok = document.execCommand('copy')
+      ta.remove()
+      if (!ok) throw new Error('Copying to the clipboard is not available')
+    }
   }
 }

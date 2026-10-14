@@ -46,12 +46,13 @@ export interface MockControl {
   options: MockOptions
 }
 
+// same order as the real engine (alphabetical by id)
 const VOICES: Array<[string, string]> = [
-  ['george', 'George'],
   ['alba', 'Alba'],
   ['anna', 'Anna'],
   ['charles', 'Charles'],
   ['cosette', 'Cosette'],
+  ['george', 'George'],
   ['jane', 'Jane'],
   ['mary', 'Mary'],
   ['michael', 'Michael'],

@@ -20,6 +20,11 @@ use tauri_specta::Event;
 /// Default speech-recognition model (see docs/DECISIONS.md "STT model selection").
 pub const DEFAULT_WHISPER_MODEL: &str = "ggml-large-v3-turbo-q8_0.bin";
 
+/// The speech model actually loaded: the default, or `PARLO_WHISPER_MODEL` (used by the self-test to run a faster model).
+pub fn whisper_model_name() -> String {
+    std::env::var("PARLO_WHISPER_MODEL").unwrap_or_else(|_| DEFAULT_WHISPER_MODEL.to_string())
+}
+
 pub struct SttBundle {
     pub engine: WhisperEngine,
     pub vad: SileroVad,
@@ -90,7 +95,7 @@ impl AppState {
         let m = models.clone();
         let stt = host.slot(EngineKind::Stt, move || {
             let engine =
-                WhisperEngine::load(&m.whisper(DEFAULT_WHISPER_MODEL), WhisperConfig::default())?;
+                WhisperEngine::load(&m.whisper(&whisper_model_name()), WhisperConfig::default())?;
             let vad = SileroVad::load(&m.vad(), 300)?;
             Ok(SttBundle { engine, vad })
         });

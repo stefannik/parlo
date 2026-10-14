@@ -4,6 +4,7 @@
 mod commands;
 mod ipc;
 mod native;
+mod selftest;
 mod state;
 
 use ipc::*;
@@ -325,6 +326,9 @@ pub fn run() {
                 tracing::warn!("cleanup failed: {e}");
             }
             app.manage(state.clone());
+            if std::env::var_os("PARLO_SELFTEST").is_some() {
+                selftest::spawn(handle.clone(), state.clone());
+            }
             if std::env::var_os("PARLO_SMOKE").is_some() {
                 spawn_smoke_check(state.clone());
             }

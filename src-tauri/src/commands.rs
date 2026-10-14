@@ -576,6 +576,10 @@ fn start_stt(
                 Err(parlo_core::Error::Cancelled) => {
                     if ctx.cancel.load(Ordering::SeqCst) {
                         let _ = std::fs::remove_dir_all(&dir); // an explicit cancel discards the checkpoint
+                                                               // the UI waits for a terminal event on this channel to leave its "Cancelling…" state
+                        let _ = on_event.send(SttEventDto::Error {
+                            error: IpcError::new("cancelled", "Cancelled"),
+                        });
                     }
                     Err(parlo_core::Error::Cancelled)
                 }
@@ -809,6 +813,9 @@ fn start_tts(
                 Err(parlo_core::Error::Cancelled) => {
                     if ctx.cancel.load(Ordering::SeqCst) {
                         let _ = std::fs::remove_dir_all(&dir);
+                        let _ = on_event.send(TtsEventDto::Error {
+                            error: IpcError::new("cancelled", "Cancelled"),
+                        });
                     }
                     Err(parlo_core::Error::Cancelled)
                 }

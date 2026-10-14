@@ -26,6 +26,10 @@ if [[ "$(uname)" == "Linux" ]]; then
   APP_BIN="${APP_BIN:-target/debug/parlo}"
   if [[ -x "$APP_BIN" ]] && command -v xvfb-run >/dev/null; then
     PARLO_SMOKE_HOLD_MS=300 unshare -rn scripts/smoke-linux.sh "$APP_BIN" | grep -q PARLO_SMOKE_OK && echo "OK: app smoke run succeeded with no network"
+    # the strongest proof: the whole command layer (STT, TTS, export, storage) with the real engines, no network namespace
+    if [[ "${PARLO_OFFLINE_FULL:-0}" == "1" ]]; then
+      unshare -rn scripts/selftest-linux.sh "$APP_BIN" >/dev/null && echo "OK: app self-test (real engines) succeeded with no network"
+    fi
   else
     echo "(app smoke skipped: build it with cargo build -p parlo-app --features tauri/custom-protocol)"
   fi

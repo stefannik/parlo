@@ -118,11 +118,11 @@ describe('mock backend contract', () => {
     expect(await run('george')).not.toBe(await run('alba'))
   })
 
-  it('voices: ten English voices, george first (default)', async () => {
+  it('voices: the ten English voices (George among them), no phantom ctric voices', async () => {
     const { backend } = setup()
     const v = await backend.voices()
     expect(v).toHaveLength(10)
-    expect(v[0]!.id).toBe('george')
+    expect(v.map((x) => x.id)).toContain('george')
     expect(v.map((x) => x.id)).not.toContain('bill_boerst')
   })
 
