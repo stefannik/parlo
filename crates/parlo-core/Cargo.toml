@@ -17,6 +17,8 @@ whisper = ["dep:whisper-rs"]
 tts-pocket = ["dep:pocket-tts", "dep:candle-core"]
 # Metal for PocketTTS (macOS only; unverified, see docs/MAC_HANDOFF.md).
 tts-metal = ["tts-pocket", "pocket-tts/metal"]
+# Apple Accelerate (BLAS) for the Candle CPU path (macOS only).
+tts-accelerate = ["tts-pocket", "pocket-tts/accelerate"]
 # Metal GPU backend for whisper.cpp (macOS only).
 whisper-metal = ["whisper", "whisper-rs/metal"]
 

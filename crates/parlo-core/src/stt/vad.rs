@@ -55,7 +55,14 @@ pub fn detect_file(
         super::filters::level_for_vad(&mut buf, pcm.sample_rate as usize);
         let spans = det.detect(&buf)?;
         for s in spans {
-            let (a, b) = (s.start_s + win_start, s.end_s + win_start);
+            // the detector pads span ends, which can run past the audio: clamp to the file
+            let (a, b) = (
+                (s.start_s + win_start).max(0.0),
+                (s.end_s + win_start).min(total_s),
+            );
+            if b <= a {
+                continue;
+            }
             // drop what the previous window already covered completely (inside the overlap)
             if let Some(last) = out.last_mut() {
                 if b <= last.end_s + 1e-6 {

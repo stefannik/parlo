@@ -30,7 +30,7 @@ done
 
 # 3 · Tauri bundle (Metal for whisper.cpp and Candle unless --no-metal)
 FEATURES=()
-[[ $METAL == 1 ]] && FEATURES=(--features "whisper-metal,tts-metal")
+[[ $METAL == 1 ]] && FEATURES=(--features "whisper-metal,tts-accelerate")
 ( cd src-tauri && cargo tauri build --target aarch64-apple-darwin --bundles app "${FEATURES[@]}" )
 APP_SRC="target/aarch64-apple-darwin/release/bundle/macos/Parlo.app"
 [[ -d "$APP_SRC" ]] || { echo "tauri build did not produce $APP_SRC" >&2; exit 1; }

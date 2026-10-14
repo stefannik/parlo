@@ -17,7 +17,11 @@ IFS=, read -ra G <<<"$GROUPS_"
 if [[ ! -d .venv ]]; then
   command -v uv >/dev/null || { echo "uv is required (https://docs.astral.sh/uv/)" >&2; exit 2; }
   uv venv --python 3.12 .venv
-  uv pip install --python .venv/bin/python --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.lock
+  if [[ "$(uname -s)" == Darwin ]]; then   # PyPI's macOS torch wheel has no +cpu local version
+    sed 's/+cpu//' requirements.lock | uv pip install --python .venv/bin/python -r /dev/stdin
+  else
+    uv pip install --python .venv/bin/python --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.lock
+  fi
 fi
 python3 ../../scripts/make-pockettts-config.py >/dev/null            # models/pockettts/english.local.yaml
 [[ -f jobs-ref-main.jsonl ]] || { .venv/bin/python make_jobs.py ref; .venv/bin/python make_jobs.py "$CAND"; }

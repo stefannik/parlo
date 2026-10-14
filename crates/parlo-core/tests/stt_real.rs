@@ -1,8 +1,8 @@
 //! The production STT pipeline with the REAL whisper.cpp engine + Silero VAD (BRIEF §7.2, §14.1): language ID, accuracy on
 //! synthetic speech in five languages, no hallucinations on silence/noise/tone/long gaps, and quiet speech (the
 //! DECISIONS C-009 regression: FLEURS speakers at −45 dBFS were dropped before normalization).
-//! Uses `ggml-small-q8_0` (fast); the shipped default is large-v3-turbo-q8_0, which is more accurate, so these
-//! thresholds are conservative for it. Fixtures: scripts/gen-fixtures.sh, models: scripts/fetch-models.sh.
+//! Uses the shipped default `ggml-large-v3-turbo-q8_0` (override: `PARLO_TEST_WHISPER=ggml-small-q8_0.bin` for a fast
+//! run — the small model is too weak for the macOS `say` voices, see DECISIONS C-014). Fixtures: scripts/gen-fixtures.sh, models: scripts/fetch-models.sh.
 mod common;
 use common::{fixture, model, norm_words, wer};
 use parlo_core::audio::prepare::prepare_audio;
@@ -22,7 +22,11 @@ impl Rig {
     fn new() -> Self {
         Self {
             engine: WhisperEngine::load(
-                &model("whisper/ggml-small-q8_0.bin"),
+                &model(&format!(
+                    "whisper/{}",
+                    std::env::var("PARLO_TEST_WHISPER")
+                        .unwrap_or_else(|_| "ggml-large-v3-turbo-q8_0.bin".into())
+                )),
                 WhisperConfig::default(),
             )
             .unwrap(),

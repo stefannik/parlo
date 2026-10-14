@@ -40,6 +40,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 default = []
 whisper-metal = ["parlo-core/whisper-metal"]
 tts-metal = ["parlo-core/tts-metal"]
+tts-accelerate = ["parlo-core/tts-accelerate"]
 
 [target.'cfg(target_os = "macos")'.dependencies]
 parlo-macos = { path = "../crates/parlo-macos" }
