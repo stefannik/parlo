@@ -4,6 +4,10 @@
 //! where that passes (see MAC_HANDOFF.md), UNCHECKED on a Mac otherwise.
 
 #[cfg(target_os = "macos")]
+pub mod aac;
+#[cfg(target_os = "macos")]
+pub mod decode;
+#[cfg(target_os = "macos")]
 pub mod memory;
 #[cfg(target_os = "macos")]
 pub mod mic;
@@ -26,4 +30,6 @@ pub fn install(p: &mut Platform) {
     p.sleep_wake = Arc::new(sleepwake::MacSleepWake::new());
     p.memory = Arc::new(memory::MacMemoryPressure::new());
     p.pdf = Some(Arc::new(pdf::PdfKitExtractor));
+    p.aac = Arc::new(aac::AudioToolboxAac);
+    p.fallback_decoder = Some(Arc::new(decode::AvFoundationDecoder));
 }

@@ -64,6 +64,7 @@ pub fn settings_update(state: S<'_>, patch: SettingsPatch) -> IpcResult<Settings
     let mut patch = serde_json::to_value(&patch).map_err(|e| IpcError::new("invalid", e.to_string()))?;
     // "" means "follow the system default input" (the DTO avoids Option<Option<_>>)
     if let Some(o) = patch.as_object_mut() {
+        o.retain(|_, v| !v.is_null()); // null = leave unchanged
         if o.get("input_device").and_then(|v| v.as_str()) == Some("") {
             o.insert("input_device".into(), serde_json::Value::Null);
         }
@@ -338,6 +339,7 @@ fn start_stt(app: AppHandle, state: Arc<AppState>, job_id: String, path: PathBuf
     let mut job = SttJob::new(&path, dir.join("work"), state.paths.decode_cache());
     job.language = if language == "auto" { LanguageSetting::Auto } else { LanguageSetting::Code(language.clone()) };
     job.threads = crate::native::stt_threads(&state.settings.lock().unwrap());
+    job.fallback_decoder = state.platform.fallback_decoder.clone();
     let stt = state.stt.clone();
     let st2 = state.clone();
     let label = format!("Transcribe {source_name}");
@@ -768,10 +770,17 @@ pub fn reveal_in_finder(path: String) -> IpcResult<()> {
 /// The UI tells the core whether it is visible, so the level meter only runs while recording *and* visible.
 #[tauri::command]
 #[specta::specta]
-pub fn ui_visibility(state: S<'_>, visible: bool) {
-    let (m, cv) = &*state.ticker;
-    m.lock().unwrap().visible = visible;
-    cv.notify_all();
+pub fn ui_visibility(app: AppHandle, state: S<'_>, visible: bool) {
+    {
+        let (m, cv) = &*state.ticker;
+        m.lock().unwrap().visible = visible;
+        cv.notify_all();
+    }
+    // A (re)opened window reattaches to a recording the core is already making — including a paused one, which has no
+    // level ticks to carry the state.
+    if visible {
+        emit_recorder_state(&app, &state);
+    }
 }
 
 #[tauri::command]
@@ -805,4 +814,60 @@ pub fn _assert_send_sync() {
     fn is<T: Send + Sync>() {}
     is::<AppState>();
     let _ = RecState::Finalized;
+}
+
+// =============================================================================================== storage
+fn dir_size(p: &std::path::Path) -> u64 {
+    let Ok(md) = std::fs::symlink_metadata(p) else { return 0 };
+    if md.is_file() {
+        return md.len();
+    }
+    if !md.is_dir() {
+        return 0;
+    }
+    std::fs::read_dir(p).map(|rd| rd.flatten().map(|e| dir_size(&e.path())).sum()).unwrap_or(0)
+}
+
+fn storage_entries(state: &AppState) -> Vec<StorageEntryDto> {
+    let m = &state.models;
+    let entry = |kind: &str, label: &str, bytes: u64, path: PathBuf| StorageEntryDto { kind: kind.into(), label: label.into(), bytes, path: path.display().to_string() };
+    let models = dir_size(&m.whisper(DEFAULT_WHISPER_MODEL)) + dir_size(&m.vad()) + dir_size(&m.pockettts());
+    vec![
+        entry("recordings", "Recordings", dir_size(&state.paths.recordings()), state.paths.recordings()),
+        entry("outputs", "Generated speech", dir_size(&state.paths.tts_outputs()), state.paths.tts_outputs()),
+        entry("cache", "Cache", dir_size(&state.paths.decode_cache()), state.paths.decode_cache()),
+        entry("models", "Models", models, m.pockettts()),
+    ]
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn storage_usage(state: S<'_>) -> IpcResult<Vec<StorageEntryDto>> {
+    Ok(storage_entries(&state))
+}
+
+/// Explicit user action: delete generated speech (`outputs`) or the decode cache (`cache`). Recordings are never touched here.
+#[tauri::command]
+#[specta::specta]
+pub fn storage_clear(state: S<'_>, kind: String) -> IpcResult<Vec<StorageEntryDto>> {
+    let dir = match kind.as_str() {
+        "outputs" => state.paths.tts_outputs(),
+        "cache" => state.paths.decode_cache(),
+        other => return Err(IpcError::new("invalid", format!("can't clear '{other}'"))),
+    };
+    if let Ok(rd) = std::fs::read_dir(&dir) {
+        for e in rd.flatten() {
+            let p = e.path();
+            let _ = if p.is_dir() { std::fs::remove_dir_all(&p) } else { std::fs::remove_file(&p) };
+        }
+    }
+    if kind == "outputs" {
+        // the workspace's current output no longer exists
+        let mut ws = state.workspace.lock().unwrap();
+        if let Some(t) = ws.tts.as_mut() {
+            t.output_id = None;
+        }
+        ws.save(&state.paths)?;
+    }
+    Ok(storage_entries(&state))
 }

@@ -102,18 +102,17 @@ export class MockBackend implements Backend {
     this.opts = opts
     this.mic = opts.micPermission ?? 'granted'
     this.recoverableList = opts.recoverables ? [...opts.recoverables] : []
-    this.workspace = opts.workspace ?? {}
-    const self = this
+    this.workspace = opts.workspace ?? { transcript: null, tts: null }
     this.control = {
       held: null,
       options: this.opts,
-      hold(point: string) {
-        this.held = point
+      hold: (point: string) => {
+        this.control.held = point
       },
-      release() {
-        this.held = null
-        self.gate?.resolve()
-        self.gate = null
+      release: () => {
+        this.control.held = null
+        this.gate?.resolve()
+        this.gate = null
       },
     }
   }
@@ -181,9 +180,13 @@ export class MockBackend implements Backend {
     return { ...this.settings }
   }
   async settingsUpdate(patch: SettingsPatch) {
-    const { input_device, ...rest } = patch
-    this.settings = { ...this.settings, ...stripUndefined(stripNull(rest)) }
-    if (input_device != null) this.settings.input_device = input_device === '' ? null : input_device
+    // null = leave unchanged; input_device "" = follow the system default
+    const next: Record<string, unknown> = { ...this.settings }
+    for (const [k, v] of Object.entries(patch)) {
+      if (v == null) continue
+      next[k] = k === 'input_device' && v === '' ? null : v
+    }
+    this.settings = next as unknown as SettingsDto
     return { ...this.settings }
   }
 
@@ -280,6 +283,7 @@ export class MockBackend implements Backend {
     if (!this.rec) throw new BackendError({ code: 'invalid', message: 'Not recording', detail: null })
     if (this.recState === 'recording') await this.recordingPause()
     const info = this.info()
+    this.durations.set(info.wav_path, info.duration_ms)
     this.endRecording()
     return info
   }
@@ -315,9 +319,11 @@ export class MockBackend implements Backend {
   private async runStt(job: number, req: TranscribeRequest, onEvent: (e: SttEventDto) => void) {
     const name = req.source.kind === 'path' ? req.source.path.split('/').pop()! : 'Recording'
     const total = 252.4
+    if (req.source.kind === 'path') this.durations.set(req.source.path, total * 1000)
     const stage = async (s: string, ms: number, steps = 4) => {
       onEvent({ type: 'stage', stage: s })
       if (s === 'loading_model') this.emitModels('stt', 'loading')
+      await this.checkpoint(`stt:${s}`)
       for (let i = 1; i <= steps; i++) {
         if (this.cancelled.has(job)) return false
         await this.sleep(ms / steps)
@@ -332,17 +338,13 @@ export class MockBackend implements Backend {
       onEvent({ type: 'error', error: { code: 'decode', message: `Parlo couldn't read “${name}”. The file may be damaged or in a format it doesn't support.`, detail: 'decode error: unsupported codec (mock)' } })
       return
     }
-    await this.checkpoint('stt:preparing')
     if (!(await stage('preparing', 700))) return this.finishCancel(job, onEvent)
-    await this.checkpoint('stt:detecting_speech')
     if (!(await stage('detecting_speech', 600))) return this.finishCancel(job, onEvent)
     if (req.language === 'auto') {
-      await this.checkpoint('stt:detecting_language')
-      if (!(await stage('detecting_language', 500, 2))) return this.finishCancel(job, onEvent)
+        if (!(await stage('detecting_language', 500, 2))) return this.finishCancel(job, onEvent)
     }
     const code = req.language === 'auto' ? 'en' : req.language
     onEvent({ type: 'language', code, prob: req.language === 'auto' ? 0.97 : 1 })
-    await this.checkpoint('stt:loading_model')
     if (!(await stage('loading_model', 800, 2))) return this.finishCancel(job, onEvent)
     this.emitModels('stt', 'ready', 300_000)
     onEvent({ type: 'stage', stage: 'transcribing' })
@@ -430,6 +432,7 @@ export class MockBackend implements Backend {
       }
       const path = `/mock/outputs/${id}/seg-${String(i).padStart(3, '0')}.wav`
       segments.push(path)
+      this.durations.set(path, Math.round(totalMs / segCount))
       onEvent({ type: 'segment_ready', index: i, path, duration_ms: Math.round(totalMs / segCount) })
       if (i === 0) await this.checkpoint('tts:generating')
     }
@@ -511,14 +514,31 @@ export class MockBackend implements Backend {
   }
 
   // ------------------------------------------------------------------------------------------------------ native helpers
-  async pickFile(kind: FilePickKind) {
+  async pickFile(kind: FilePickKind): Promise<string | null> {
     return kind === 'document' ? '/Users/me/Documents/meeting-notes.docx' : '/Users/me/Downloads/team-meeting.m4a'
   }
-  async saveFile(defaultName: string, _extensions: string[]) {
+  async saveFile(defaultName: string, _extensions: string[]): Promise<string | null> {
     return `/Users/me/Desktop/${defaultName}`
   }
+  private durations = new Map<string, number>()
+  private blobs = new Map<string, string>()
+  /** a silent WAV of the length the scripts announced for this path (10 s if unknown), so the player really plays */
   fileUrl(path: string) {
-    return `mock-audio://${path}`
+    const cached = this.blobs.get(path)
+    if (cached) return cached
+    const secs = Math.min(600, Math.max(1, (this.durations.get(path) ?? 10_000) / 1000))
+    const rate = 8000
+    const n = Math.round(secs * rate)
+    const buf = new ArrayBuffer(44 + n)
+    const v = new DataView(buf)
+    const w = (o: number, s: string) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)))
+    w(0, 'RIFF'); v.setUint32(4, 36 + n, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true)
+    v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, rate, true); v.setUint32(28, rate, true)
+    v.setUint16(32, 1, true); v.setUint16(34, 8, true); w(36, 'data'); v.setUint32(40, n, true)
+    new Uint8Array(buf, 44).fill(128)
+    const url = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }))
+    this.blobs.set(path, url)
+    return url
   }
   async onFileDrop(cb: (paths: string[]) => void, onHover?: (over: boolean) => void): Promise<Unlisten> {
     this.dropCb = cb
@@ -537,12 +557,6 @@ export class MockBackend implements Backend {
   }
 }
 
-function stripUndefined<T extends object>(o: T): Partial<T> {
-  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>
-}
-function stripNull<T extends object>(o: T): Partial<T> {
-  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null)) as Partial<T>
-}
 function hash(s: string) {
   let h = 5381
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0

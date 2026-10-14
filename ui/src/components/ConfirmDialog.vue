@@ -23,7 +23,6 @@ function onKey(e: KeyboardEvent) {
 </script>
 
 <template>
-  <transition name="fade">
     <div v-if="app.confirm" class="scrim" @keydown="onKey" @click.self="app.answerConfirm(false)">
       <div class="dialog card" role="alertdialog" aria-modal="true" aria-labelledby="cd-title" aria-describedby="cd-body" data-testid="confirm-dialog">
         <h2 id="cd-title">{{ app.confirm.title }}</h2>
@@ -36,7 +35,6 @@ function onKey(e: KeyboardEvent) {
         </div>
       </div>
     </div>
-  </transition>
 </template>
 
 <style scoped>
@@ -44,6 +42,6 @@ function onKey(e: KeyboardEvent) {
 .dialog { width: min(420px, calc(100vw - 48px)); padding: var(--s5); box-shadow: var(--shadow-2); }
 h2 { font-size: 16px; margin-bottom: var(--s2); }
 .actions { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s5); }
-.fade-enter-active, .fade-leave-active { transition: opacity var(--dur) var(--ease); }
-.fade-enter-from, .fade-leave-to { opacity: 0; }
+.scrim { animation: fade-in var(--dur) var(--ease); }
+@keyframes fade-in { from { opacity: 0; } }
 </style>

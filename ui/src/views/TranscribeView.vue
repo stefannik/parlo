@@ -21,6 +21,12 @@ const showLang = ref(false)
 
 const visibleStages = computed<SttStage[]>(() => STAGE_ORDER.filter((s) => s !== 'detecting_language' || tr.language === 'auto'))
 const stageIndex = computed(() => visibleStages.value.indexOf(tr.currentStage))
+const subtitle = computed(() => {
+  const parts: string[] = []
+  if (tr.progress) parts.push(`${formatDurationWords(tr.progress.totalS)} of audio`)
+  if (tr.detectedLanguage) parts.push(languageName(tr.detectedLanguage.code))
+  return parts.join(' · ')
+})
 const pct = computed(() => (tr.overallFraction == null ? null : Math.round(tr.overallFraction * 100)))
 
 const micHint = computed(() => {
@@ -126,10 +132,7 @@ defineExpose({ chooseFile })
       <header class="proc-head">
         <div>
           <h2 class="selectable" data-testid="source-name">{{ tr.source?.name }}</h2>
-          <p class="muted small">
-            <template v-if="tr.progress">{{ formatDurationWords(tr.progress.totalS) }} of audio</template>
-            <template v-if="tr.detectedLanguage"> · {{ languageName(tr.detectedLanguage.code) }}</template>
-          </p>
+          <p v-if="subtitle" class="muted small" data-testid="proc-subtitle">{{ subtitle }}</p>
         </div>
         <button type="button" class="btn" :disabled="tr.cancelling" data-testid="cancel-button" @click="tr.cancel()">{{ tr.cancelling ? 'Cancelling…' : 'Cancel' }}</button>
       </header>

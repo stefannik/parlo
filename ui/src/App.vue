@@ -32,14 +32,11 @@ async function quit(save: boolean) {
     <ConfirmDialog />
     <ToastHost />
 
-    <transition name="fade">
-      <div v-if="app.dropHover" class="drop-overlay" aria-hidden="true" data-testid="drop-overlay">
-        <div class="drop-msg"><Icon name="upload" :size="28" /> Drop to {{ 'open' }}</div>
-      </div>
-    </transition>
+    <div v-if="app.dropHover" class="drop-overlay" aria-hidden="true" data-testid="drop-overlay">
+      <div class="drop-msg"><Icon name="upload" :size="28" /> Drop to open</div>
+    </div>
 
-    <transition name="fade">
-      <div v-if="app.quitPrompt" class="scrim" @keydown.esc="app.quitPrompt = null">
+    <div v-if="app.quitPrompt" class="scrim" @keydown.esc="app.quitPrompt = null">
         <div class="dialog card" role="alertdialog" aria-modal="true" aria-labelledby="q-title" data-testid="quit-dialog">
           <h2 id="q-title">{{ app.quitPrompt.recording ? 'Stop recording and quit?' : 'Quit Parlo?' }}</h2>
           <p class="muted">
@@ -51,21 +48,20 @@ async function quit(save: boolean) {
             <button type="button" class="btn btn-primary" data-testid="quit-confirm" @click="quit(true)">{{ app.quitPrompt.recording ? 'Stop and save, then quit' : 'Quit' }}</button>
           </div>
         </div>
-      </div>
-    </transition>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .shell { height: 100%; display: flex; flex-direction: column; min-height: 0; }
-.main { flex: 1; min-height: 0; position: relative; }
+.main { flex: 1; min-height: 0; position: relative; margin-bottom: 40px; }
 .main > * { position: absolute; inset: 0; }
 .drop-overlay { position: fixed; inset: 8px; z-index: 35; display: grid; place-items: center; border: 2px dashed var(--accent); border-radius: var(--r-lg); background: var(--accent-soft); pointer-events: none; }
-.drop-msg { display: inline-flex; gap: 10px; align-items: center; padding: 10px 20px; border-radius: 999px; background: var(--surface); box-shadow: var(--shadow-2); font-weight: 600; color: var(--accent); }
+.drop-msg { display: inline-flex; gap: 10px; align-items: center; padding: 10px 20px; border-radius: 999px; background: var(--surface); box-shadow: var(--shadow-2); font-weight: 600; color: var(--accent-text); }
 .scrim { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; background: var(--scrim); }
 .dialog { width: min(440px, calc(100vw - 48px)); padding: var(--s5); box-shadow: var(--shadow-2); }
 h2 { font-size: 16px; margin-bottom: var(--s2); }
 .actions { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s5); }
-.fade-enter-active, .fade-leave-active { transition: opacity var(--dur) var(--ease); }
-.fade-enter-from, .fade-leave-to { opacity: 0; }
+.scrim, .drop-overlay { animation: fade-in var(--dur) var(--ease); }
+@keyframes fade-in { from { opacity: 0; } }
 </style>

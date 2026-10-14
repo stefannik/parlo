@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { backend } from '../backend'
 import type { AppInfo, ModelsStateEvent, RecoverableDto, SettingsDto, SettingsPatch } from '../bindings'
+import { settingsPatch } from '../lib/settings'
 import { useToastStore } from './toast'
 
 export type Tab = 'transcribe' | 'speak'
@@ -54,9 +55,9 @@ export const useAppStore = defineStore('app', () => {
     applyTheme()
   }
 
-  async function updateSettings(patch: SettingsPatch) {
+  async function updateSettings(patch: Partial<SettingsPatch>) {
     try {
-      settings.value = await backend().settingsUpdate(patch)
+      settings.value = await backend().settingsUpdate(settingsPatch(patch))
       applyTheme()
     } catch (e) {
       useToastStore().error(`Couldn't save the setting. ${(e as Error).message}`)

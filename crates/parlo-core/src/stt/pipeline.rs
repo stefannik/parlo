@@ -8,7 +8,7 @@ use super::chunker::{build_chunks, ChunkParams};
 use super::engine::{LangGuess, SttEngine, TranscribeOpts};
 use super::filters::{analyze, collapse_repeats, normalize_peak, should_drop_segment, should_transcribe};
 use super::vad::{detect_file, SpeechDetector};
-use crate::audio::prepare::{prepare_audio, STT_RATE};
+use crate::audio::prepare::{prepare_audio_with, STT_RATE};
 use crate::audio::wav::PcmFile;
 use crate::error::{Error, Result};
 use std::collections::HashMap;
@@ -35,6 +35,8 @@ pub struct SttJob {
     /// feed the previous chunk's tail to the decoder as context (off by default; see DECISIONS)
     pub carry_prompt: bool,
     pub chunk: ChunkParams,
+    /// platform decoder tried when the portable one can't read the file (macOS: AVFoundation)
+    pub fallback_decoder: Option<std::sync::Arc<dyn crate::platform::FallbackDecoder>>,
 }
 
 impl SttJob {
@@ -54,6 +56,7 @@ impl SttJob {
             threads: 4,
             carry_prompt: false,
             chunk: ChunkParams::default(),
+            fallback_decoder: None,
         }
     }
 }
@@ -176,9 +179,13 @@ pub fn run_transcription(
             .map(|f| f.frames > 0)
             .unwrap_or(false);
     if !reuse {
-        prepare_audio(&job.input, &pcm_path, cancel, |p| {
-            sink.event(SttEvent::StageProgress(p))
-        })?;
+        prepare_audio_with(
+            &job.input,
+            &pcm_path,
+            cancel,
+            |p| sink.event(SttEvent::StageProgress(p)),
+            job.fallback_decoder.as_deref(),
+        )?;
     }
     let pcm = PcmFile::open(&pcm_path)?;
     debug_assert_eq!(pcm.sample_rate, STT_RATE);

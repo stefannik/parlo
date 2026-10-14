@@ -44,6 +44,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::export_recording,
             commands::workspace_get,
             commands::workspace_update,
+            commands::storage_usage,
+            commands::storage_clear,
             commands::reveal_in_finder,
             commands::ui_visibility,
             commands::diagnostics_text,

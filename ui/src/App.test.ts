@@ -52,6 +52,20 @@ describe('app shell (mock backend)', () => {
     expect(w.find('[data-testid="toast"]').text()).toContain('copied')
   })
 
+  it('Export menu lists its formats and exports the transcript through a save dialog', async () => {
+    const { w, backend } = await boot({ timeScale: 0.02 })
+    await tid(w, 'choose-file').trigger('click')
+    await vi.waitFor(() => expect(tid(w, 'transcribe-view').attributes('data-phase')).toBe('result'), { timeout: 5000 })
+    const spy = vi.spyOn(backend, 'exportTranscript')
+    await tid(w, 'export-button').trigger('click')
+    await flushPromises()
+    expect(w.findAll('[role="menuitem"]').map((m) => m.text())).toEqual(['Text (.txt)', 'Markdown (.md)'])
+    await tid(w, 'menu-md').trigger('click')
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled())
+    expect(spy.mock.calls[0]![1]).toBe('md')
+    expect(w.find('[role="menu"]').exists()).toBe(false)
+  })
+
   it('shows the error card with details and Retry', async () => {
     const { w } = await boot({ timeScale: 0.02, failNextStt: true })
     await tid(w, 'choose-file').trigger('click')

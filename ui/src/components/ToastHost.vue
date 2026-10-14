@@ -7,14 +7,12 @@ const toasts = useToastStore()
 
 <template>
   <div class="toast-host" role="region" aria-label="Notifications" aria-live="polite">
-    <transition-group name="toast">
-      <div v-for="t in toasts.toasts" :key="t.id" class="toast" :class="t.kind" role="status" data-testid="toast">
+    <div v-for="t in toasts.toasts" :key="t.id" class="toast" :class="t.kind" role="status" data-testid="toast">
         <Icon :name="t.kind === 'error' ? 'warn' : t.kind === 'success' ? 'check' : 'info'" :size="16" />
         <span class="msg">{{ t.message }}</span>
         <button v-if="t.action" type="button" class="btn btn-ghost toast-action" @click="t.action.run(); toasts.dismiss(t.id)">{{ t.action.label }}</button>
         <button type="button" class="btn btn-ghost btn-icon x" aria-label="Dismiss" @click="toasts.dismiss(t.id)"><Icon name="x" :size="14" /></button>
       </div>
-    </transition-group>
   </div>
 </template>
 
@@ -29,8 +27,8 @@ const toasts = useToastStore()
 .toast.success > svg { color: var(--success); }
 .toast.info > svg { color: var(--accent); }
 .msg { flex: 1; min-width: 0; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
-.toast-action { color: var(--accent); min-height: 28px; padding: 0 var(--s3); }
+.toast-action { color: var(--accent-text); min-height: 28px; padding: 0 var(--s3); }
 .x { width: 28px; min-height: 28px; }
-.toast-enter-active, .toast-leave-active { transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease); }
-.toast-enter-from, .toast-leave-to { opacity: 0; transform: translateY(8px); }
+.toast { animation: toast-in var(--dur) var(--ease); }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
 </style>

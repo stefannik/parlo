@@ -17,7 +17,7 @@ impl DiskSpace for SystemDisk {
 }
 
 /// macOS: AVFoundation (`AVAssetReader`) fallback for files symphonia can't decode; Linux: none.
-pub trait FallbackDecoder: Send + Sync {
+pub trait FallbackDecoder: Send + Sync + std::fmt::Debug {
     /// Decode `src` to a 16 kHz mono PCM16 WAV at `dest`. Return `Ok(false)` if the file is not handled.
     fn decode_to_wav16k(&self, src: &Path, dest: &Path) -> Result<bool>;
 }

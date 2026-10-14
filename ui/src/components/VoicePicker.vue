@@ -77,8 +77,7 @@ onBeforeUnmount(() => {
       <span>{{ current()?.label ?? 'Voice' }}</span>
       <Icon name="chevron" :size="14" />
     </button>
-    <transition name="pop">
-      <ul v-if="open" ref="list" class="list card" role="listbox" aria-label="Voice" @keydown="onKey">
+    <ul v-if="open" ref="list" class="list card" role="listbox" aria-label="Voice" @keydown="onKey">
         <li v-for="v in voices" :key="v.id" role="option" :aria-selected="v.id === modelValue" class="row" :class="{ sel: v.id === modelValue }">
           <button type="button" class="pick" :data-testid="`voice-${v.id}`" @click="choose(v.id)">
             <Icon v-if="v.id === modelValue" name="check" :size="14" />
@@ -90,18 +89,17 @@ onBeforeUnmount(() => {
           </button>
         </li>
       </ul>
-    </transition>
   </div>
 </template>
 
 <style scoped>
 .voice { position: relative; }
-.list { position: absolute; z-index: 30; bottom: calc(100% + 6px); left: 0; margin: 0; padding: 4px; list-style: none; min-width: 220px; max-height: 320px; overflow: auto; box-shadow: var(--shadow-2); }
+.list { position: absolute; z-index: 30; bottom: calc(100% + 6px); left: 0; margin: 0; padding: 4px; list-style: none; min-width: 220px; max-height: 400px; overflow: auto; box-shadow: var(--shadow-2); }
 .row { display: flex; align-items: center; border-radius: 6px; }
 .row:hover { background: var(--surface-2); }
 .pick { flex: 1; display: flex; align-items: center; gap: var(--s2); padding: 6px 10px; border: 0; background: transparent; text-align: left; border-radius: 6px; }
 .gap { width: 14px; }
 .prev { width: 28px; min-height: 28px; }
-.pop-enter-active, .pop-leave-active { transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease); }
-.pop-enter-from, .pop-leave-to { opacity: 0; transform: translateY(4px); }
+.list { animation: pop-in var(--dur) var(--ease); }
+@keyframes pop-in { from { opacity: 0; transform: translateY(4px); } }
 </style>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
 import { backend } from '../backend'
-import type { IdleUnload, Performance, Retention, StorageEntryDto } from '../bindings'
+import type { Appearance, IdleUnload, Performance, Retention, StorageEntryDto } from '../bindings'
 import { formatBytes } from '../lib/format'
 import { LANGUAGES } from '../lib/languages'
 import { useAppStore } from '../stores/app'
@@ -118,7 +118,6 @@ function pick<T extends string>(e: Event): T {
 </script>
 
 <template>
-  <transition name="fade">
     <div v-if="app.settingsOpen" class="scrim" @click.self="close" @keydown="onKey">
       <div ref="dialog" class="sheet card" role="dialog" aria-modal="true" aria-label="Settings" data-testid="settings-sheet">
         <nav class="nav" role="tablist" aria-orientation="vertical" @keydown="tabKey">
@@ -134,7 +133,7 @@ function pick<T extends string>(e: Event): T {
               <h2>General</h2>
               <div class="field">
                 <label for="s-appearance">Appearance</label>
-                <select id="s-appearance" :value="app.settings.appearance" @change="app.updateSettings({ appearance: pick($event) })">
+                <select id="s-appearance" :value="app.settings.appearance" @change="app.updateSettings({ appearance: pick<Appearance>($event) })">
                   <option value="system">Match system</option>
                   <option value="light">Light</option>
                   <option value="dark">Dark</option>
@@ -242,7 +241,6 @@ function pick<T extends string>(e: Event): T {
         </div>
       </div>
     </div>
-  </transition>
 </template>
 
 <style scoped>
@@ -272,6 +270,6 @@ select { appearance: none; -webkit-appearance: none; min-height: 30px; width: 26
 .about dt { color: var(--text-2); }
 .about dd { margin: 0; }
 .model { display: flex; justify-content: space-between; gap: var(--s3); }
-.fade-enter-active, .fade-leave-active { transition: opacity var(--dur) var(--ease); }
-.fade-enter-from, .fade-leave-to { opacity: 0; }
+.scrim { animation: fade-in var(--dur) var(--ease); }
+@keyframes fade-in { from { opacity: 0; } }
 </style>

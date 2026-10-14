@@ -2,6 +2,7 @@
 // ordering, same error codes, same state transitions. These assertions are what the UI relies on.
 import { describe, expect, it } from 'vitest'
 import type { RecorderStateEvent, SttEventDto, TtsEventDto } from '../bindings'
+import { settingsPatch } from '../lib/settings'
 import { flush, setup } from '../test/helpers'
 import { MockBackend } from './mock'
 
@@ -136,11 +137,11 @@ describe('mock backend contract', () => {
 
   it('settings patch merges, and "" resets the input device to the system default', async () => {
     const { backend } = setup()
-    let s = await backend.settingsUpdate({ appearance: 'dark', input_device: 'airpods' } as never)
+    let s = await backend.settingsUpdate(settingsPatch({ appearance: 'dark', input_device: 'airpods' }))
     expect(s.appearance).toBe('dark')
     expect(s.input_device).toBe('airpods')
     expect(s.default_voice).toBe('george')
-    s = await backend.settingsUpdate({ input_device: '' } as never)
+    s = await backend.settingsUpdate(settingsPatch({ input_device: '' }))
     expect(s.input_device).toBeNull()
   })
 

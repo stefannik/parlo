@@ -23,14 +23,14 @@ watch(
   },
 )
 
-function items() {
+function menuEls() {
   return Array.from(menu.value?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not([disabled])') ?? [])
 }
 async function show() {
   if (props.disabled) return
   open.value = true
   await nextTick()
-  items()[0]?.focus()
+  menuEls()[0]?.focus()
   document.addEventListener('pointerdown', outside, true)
 }
 function hide(refocus = false) {
@@ -46,7 +46,7 @@ function pick(id: string) {
   emit('select', id)
 }
 function onMenuKey(e: KeyboardEvent) {
-  const els = items()
+  const els = menuEls()
   const i = els.indexOf(document.activeElement as HTMLButtonElement)
   if (e.key === 'ArrowDown') {
     e.preventDefault()
@@ -81,14 +81,12 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside, true)
       {{ label }}
       <Icon name="chevron" :size="14" />
     </button>
-    <transition name="pop">
-      <div v-if="open" ref="menu" class="menu card" :class="{ up }" role="menu" @keydown="onMenuKey">
+    <div v-if="open" ref="menu" class="menu card" :class="{ up }" role="menu" @keydown="onMenuKey">
         <button v-for="it in items" :key="it.id" type="button" role="menuitem" class="item" :disabled="it.disabled" :data-testid="`menu-${it.id}`" @click="pick(it.id)">
           <span>{{ it.label }}</span>
           <span v-if="it.hint" class="small muted">{{ it.hint }}</span>
         </button>
       </div>
-    </transition>
   </div>
 </template>
 
@@ -100,6 +98,6 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside, true)
 .item:hover, .item:focus-visible { background: var(--accent); color: var(--on-accent); outline: none; }
 .item:hover .muted, .item:focus-visible .muted { color: inherit; opacity: 0.85; }
 .item[disabled] { opacity: 0.4; pointer-events: none; }
-.pop-enter-active, .pop-leave-active { transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease); }
-.pop-enter-from, .pop-leave-to { opacity: 0; transform: translateY(-4px); }
+.menu { animation: pop-in var(--dur) var(--ease); }
+@keyframes pop-in { from { opacity: 0; transform: translateY(-4px); } }
 </style>

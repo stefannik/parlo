@@ -1,7 +1,7 @@
 //! BRIEF §14.1 "Decode: every format in §7.1 decodes to the expected duration (±50 ms) and sample count."
 mod common;
 use common::fixture;
-use parlo_core::audio::prepare::{prepare_audio, STT_RATE};
+use parlo_core::audio::prepare::{prepare_audio, prepare_audio_with, STT_RATE};
 use parlo_core::audio::wav::PcmFile;
 use parlo_core::error::{DecodeError, Error};
 use std::sync::atomic::AtomicBool;
@@ -114,6 +114,68 @@ fn rejects_garbage() {
         matches!(e, DecodeError::Unsupported(_) | DecodeError::Corrupt(_)),
         "{e:?}"
     );
+}
+
+/// The platform fallback (macOS AVFoundation) gets exactly one chance when the portable decoder can't read a file.
+#[derive(Debug)]
+struct FakeFallback {
+    handles: bool,
+    calls: std::sync::atomic::AtomicUsize,
+}
+impl parlo_core::platform::FallbackDecoder for FakeFallback {
+    fn decode_to_wav16k(&self, _src: &std::path::Path, dest: &std::path::Path) -> parlo_core::error::Result<bool> {
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if !self.handles {
+            return Ok(false);
+        }
+        let mut w = parlo_core::audio::wav::WavWriter::create(dest, 1, STT_RATE)?;
+        w.write_i16(&vec![1000i16; STT_RATE as usize * 2])?;
+        w.finalize()?;
+        Ok(true)
+    }
+}
+
+#[test]
+fn fallback_decoder_rescues_unsupported_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let fb = FakeFallback { handles: true, calls: 0.into() };
+    let p = prepare_audio_with(
+        &fixture("generated/formats/garbage.mp3"),
+        &dir.path().join("o.wav"),
+        &AtomicBool::new(false),
+        |_| {},
+        Some(&fb),
+    )
+    .expect("fallback should produce audio");
+    assert_eq!(fb.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert!((p.duration_s - 2.0).abs() < 0.01, "{}", p.duration_s);
+    assert!(dir.path().join("o.wav").exists());
+    assert!(!dir.path().join("o.part").exists(), "no temp file left behind");
+}
+
+#[test]
+fn fallback_decoder_declining_keeps_the_original_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let fb = FakeFallback { handles: false, calls: 0.into() };
+    let e = prepare_audio_with(
+        &fixture("generated/formats/garbage.mp3"),
+        &dir.path().join("o.wav"),
+        &AtomicBool::new(false),
+        |_| {},
+        Some(&fb),
+    )
+    .unwrap_err();
+    assert!(matches!(e, Error::Decode(DecodeError::Unsupported(_) | DecodeError::Corrupt(_))), "{e:?}");
+    assert_eq!(fb.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert!(!dir.path().join("o.wav").exists() && !dir.path().join("o.part").exists());
+}
+
+#[test]
+fn fallback_decoder_is_not_consulted_for_good_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let fb = FakeFallback { handles: true, calls: 0.into() };
+    prepare_audio_with(&fixture("generated/formats/flac.flac"), &dir.path().join("o.wav"), &AtomicBool::new(false), |_| {}, Some(&fb)).unwrap();
+    assert_eq!(fb.calls.load(std::sync::atomic::Ordering::SeqCst), 0);
 }
 
 #[test]

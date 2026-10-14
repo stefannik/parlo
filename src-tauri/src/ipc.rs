@@ -102,31 +102,25 @@ pub struct SettingsDto {
     pub recording_retention: Retention,
     pub default_language: String,
     pub default_voice: String,
+    #[specta(type = specta_typescript::Number)]
     pub default_speed: f32,
     pub tts_quality: String,
 }
 
-/// Partial update: only the fields present are changed.
+/// Partial update: fields that are `null` are left unchanged.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Type)]
+#[serde(default)]
 pub struct SettingsPatch {
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub appearance: Option<Appearance>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub model_idle_timeout: Option<IdleUnload>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub performance: Option<Performance>,
     /// `""` = follow the system default; any other value pins that device id
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub input_device: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub recording_retention: Option<Retention>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub default_language: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub default_voice: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[specta(type = Option<specta_typescript::Number>)]
     pub default_speed: Option<f32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub tts_quality: Option<String>,
 }
 
@@ -179,7 +173,9 @@ pub struct RecorderStateEvent {
     #[specta(type = specta_typescript::Number)]
     pub elapsed_ms: u64,
     pub device: String,
+    #[specta(type = specta_typescript::Number)]
     pub rms: f32,
+    #[specta(type = specta_typescript::Number)]
     pub peak: f32,
     pub gaps: u32,
 }
@@ -255,10 +251,14 @@ pub struct TranscribeRequest {
 pub struct TranscriptDto {
     pub text: String,
     pub language: Option<String>,
+    #[specta(type = Option<specta_typescript::Number>)]
     pub language_prob: Option<f32>,
+    #[specta(type = specta_typescript::Number)]
     pub duration_s: f64,
+    #[specta(type = specta_typescript::Number)]
     pub speech_s: f64,
     pub words: u32,
+    #[specta(type = specta_typescript::Number)]
     pub processing_s: f64,
     pub source_name: String,
     pub recording_id: Option<String>,
@@ -269,10 +269,10 @@ pub struct TranscriptDto {
 pub enum SttEventDto {
     /// `preparing` | `detecting_speech` | `detecting_language` | `loading_model` | `transcribing`
     Stage { stage: String },
-    StageProgress { fraction: f64 },
-    Language { code: String, prob: f32 },
-    Progress { done_s: f64, total_s: f64, #[specta(type = Option<specta_typescript::Number>)] eta_ms: Option<u64> },
-    Paragraph { index: u32, text: String, start_s: f64, end_s: f64 },
+    StageProgress { #[specta(type = specta_typescript::Number)] fraction: f64 },
+    Language { code: String, #[specta(type = specta_typescript::Number)] prob: f32 },
+    Progress { #[specta(type = specta_typescript::Number)] done_s: f64, #[specta(type = specta_typescript::Number)] total_s: f64, #[specta(type = Option<specta_typescript::Number>)] eta_ms: Option<u64> },
+    Paragraph { index: u32, text: String, #[specta(type = specta_typescript::Number)] start_s: f64, #[specta(type = specta_typescript::Number)] end_s: f64 },
     Done { transcript: TranscriptDto },
     Error { error: IpcError },
 }
@@ -324,6 +324,7 @@ pub struct ImportResultDto {
     pub words: u32,
     pub pages: Option<u32>,
     pub chapters: Option<u32>,
+    #[specta(type = specta_typescript::Number)]
     pub est_minutes: f64,
     pub warnings: Vec<String>,
 }
@@ -348,6 +349,7 @@ pub enum TranscriptExportFormat {
 pub struct TranscriptMeta {
     pub source_name: String,
     pub language: Option<String>,
+    #[specta(type = specta_typescript::Number)]
     pub duration_s: f64,
 }
 
@@ -356,6 +358,7 @@ pub struct WorkspaceTranscriptDto {
     pub text: String,
     pub source_name: String,
     pub language: Option<String>,
+    #[specta(type = specta_typescript::Number)]
     pub duration_s: f64,
     pub words: u32,
     pub edited: bool,
@@ -382,6 +385,7 @@ pub struct WorkspaceDto {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Type)]
+#[serde(default)]
 pub struct WorkspacePatch {
     pub transcript: Option<WorkspaceTranscriptDto>,
     pub tts: Option<WorkspaceTtsDto>,
@@ -395,4 +399,15 @@ pub enum RecoverableDto {
     Recording { id: String, wav_path: String, #[specta(type = specta_typescript::Number)] duration_ms: u64, started_at: String },
     SttJob { job_id: String, source_name: String },
     TtsJob { job_id: String, text_preview: String, voice: String },
+}
+
+// ---------------------------------------------------------------------------------------------------- storage
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct StorageEntryDto {
+    /// `recordings` | `outputs` | `cache` | `models`
+    pub kind: String,
+    pub label: String,
+    #[specta(type = specta_typescript::Number)]
+    pub bytes: u64,
+    pub path: String,
 }

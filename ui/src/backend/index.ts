@@ -20,6 +20,14 @@ export async function initBackend(): Promise<Backend> {
     const mock = new MockBackend({
       timeScale: Number(params.get('timescale') ?? '1'),
       micPermission: (params.get('mic') as never) ?? 'granted',
+      // ?recover=1 starts with an interrupted recording and TTS job listed (screenshots / manual testing)
+      recoverables:
+        params.get('recover') === '1'
+          ? [
+              { kind: 'recording', id: 'rec-recovered', wav_path: '/mock/recordings/rec-recovered.wav', duration_ms: 1_845_000, started_at: new Date(Date.now() - 3_600_000).toISOString() },
+              { kind: 'tts_job', job_id: 'job-1', text_preview: 'Chapter 3 — The long way round', voice: 'george' },
+            ]
+          : undefined,
     })
     ;(window as unknown as { __parloMock: unknown }).__parloMock = mock
     setBackend(mock)

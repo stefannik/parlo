@@ -3,7 +3,7 @@
 
 use super::decode::{decode_mono, AudioInfo};
 use super::resample::StreamResampler;
-use super::wav::WavWriter;
+use super::wav::{PcmFile, WavWriter};
 use crate::error::{Error, Result};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -20,6 +20,51 @@ pub struct Prepared {
 
 pub fn f32_to_i16(x: f32) -> i16 {
     (x.clamp(-1.0, 1.0) * 32767.0).round() as i16
+}
+
+/// [`prepare_audio`] with a platform fallback (macOS: AVFoundation): when the portable decoder reports the container or
+/// codec as unsupported/damaged, the fallback gets one chance before the error is surfaced.
+pub fn prepare_audio_with(
+    src: &Path,
+    dest: &Path,
+    cancel: &AtomicBool,
+    progress: impl FnMut(f64),
+    fallback: Option<&dyn crate::platform::FallbackDecoder>,
+) -> Result<Prepared> {
+    match prepare_audio(src, dest, cancel, progress) {
+        Err(Error::Decode(
+            crate::error::DecodeError::Unsupported(_) | crate::error::DecodeError::Corrupt(_),
+        )) if fallback.is_some() => {
+            let tmp = dest.with_extension("part");
+            let handled = fallback
+                .expect("checked above")
+                .decode_to_wav16k(src, &tmp)
+                .unwrap_or(false);
+            let frames = if handled {
+                PcmFile::open(&tmp).map(|f| f.frames).unwrap_or(0)
+            } else {
+                0
+            };
+            if frames == 0 {
+                let _ = std::fs::remove_file(&tmp);
+                // report the portable decoder's verdict, not the fallback's silence
+                return prepare_audio(src, dest, cancel, |_| {});
+            }
+            std::fs::rename(&tmp, dest).map_err(|e| Error::io(dest, e))?;
+            Ok(Prepared {
+                path: dest.to_path_buf(),
+                frames,
+                duration_s: frames as f64 / STT_RATE as f64,
+                source: AudioInfo {
+                    sample_rate: STT_RATE,
+                    channels: 1,
+                    duration_s: Some(frames as f64 / STT_RATE as f64),
+                    codec: "platform fallback".into(),
+                },
+            })
+        }
+        other => other,
+    }
 }
 
 /// Decode `src` into `dest` (16 kHz mono PCM16 WAV). `progress` gets 0..=1 (if the container knows its length).

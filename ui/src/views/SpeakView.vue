@@ -82,7 +82,7 @@ defineExpose({ openFile })
         </div>
         <button type="button" class="btn btn-primary" data-testid="speak-retry" @click="sp.generate()"><Icon name="refresh" :size="16" /> Retry</button>
       </div>
-      <AudioPlayer v-if="sp.hasOutput" v-model:speed="sp.speed" :segments="sp.segments" :total-ms="sp.durationMs" :generating="sp.phase === 'generating'" />
+      <AudioPlayer v-if="sp.hasOutput" v-model:speed="sp.speed" :show-speed="false" :segments="sp.segments" :total-ms="sp.durationMs" :generating="sp.phase === 'generating'" />
       <div v-if="sp.phase === 'result'" class="res-actions">
         <span v-if="sp.outOfDate" class="chip stale" data-testid="out-of-date"><Icon name="warn" :size="12" /> Out of date — the text or voice changed</span>
         <span v-else class="muted small tabular">{{ formatClock(sp.durationMs ?? 0) }}<template v-if="sp.cacheHit"> · reused from earlier</template> · Exports are always 1×</span>

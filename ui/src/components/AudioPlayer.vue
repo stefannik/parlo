@@ -19,8 +19,10 @@ const props = withDefaults(
     generating?: boolean
     speed: number
     label?: string
+    /** show the speed controls (Speak's bottom bar owns them there) */
+    showSpeed?: boolean
   }>(),
-  { totalMs: null, generating: false, label: 'Generated speech' },
+  { totalMs: null, generating: false, label: 'Generated speech', showSpeed: true },
 )
 const emit = defineEmits<{ 'update:speed': [number]; started: [] }>()
 
@@ -159,7 +161,7 @@ function onScrub(e: Event) {
   seekTo(Number((e.target as HTMLInputElement).value))
 }
 
-const speedText = computed(() => props.speed.toFixed(2).replace(/0$/, ''))
+const speedText = computed(() => props.speed.toFixed(2))
 function setSpeed(v: number) {
   if (!Number.isFinite(v)) return
   emit('update:speed', Math.min(2, Math.max(0.5, Math.round(v * 20) / 20)))
@@ -205,7 +207,7 @@ onBeforeUnmount(() => audio.value?.pause())
         <span data-testid="player-total">{{ generating ? '≥ ' : '' }}{{ formatClock(total) }}</span>
       </div>
     </div>
-    <div class="speed">
+    <div v-if="showSpeed" class="speed">
       <label class="small muted" for="player-speed">Speed</label>
       <input id="player-speed" type="range" min="0.5" max="2" step="0.05" :value="speed" aria-label="Playback speed" @input="setSpeed(Number(($event.target as HTMLInputElement).value))" />
       <input class="speed-num tabular" type="number" min="0.5" max="2" step="0.05" :value="speedText" aria-label="Playback speed value" @change="setSpeed(Number(($event.target as HTMLInputElement).value))" />

@@ -14,9 +14,11 @@ tracing = "0.1"
 crossbeam-channel = "0.5"
 
 [target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"
+core-foundation-sys = "0.8"
 objc2 = "0.6"
 block2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSProcessInfo", "NSNotification", "NSOperation", "NSURL", "NSError", "NSArray", "NSDictionary", "NSValue", "NSData"] }
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWorkspace"] }
-objc2-av-foundation = { version = "0.3", default-features = false, features = ["std", "AVCaptureDevice", "AVMediaFormat", "AVAsset", "AVAssetReader", "AVAssetReaderOutput", "AVAssetTrack"] }
+objc2-av-foundation = { version = "0.3", default-features = false, features = ["std", "AVCaptureDevice", "AVMediaFormat", "AVAsset", "AVAssetReader", "AVAssetReaderOutput", "AVAssetTrack", "AVMediaFormat"] }
 objc2-pdf-kit = { version = "0.3", default-features = false, features = ["std", "PDFDocument", "PDFPage"] }

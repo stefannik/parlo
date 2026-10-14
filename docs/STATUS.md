@@ -5,22 +5,20 @@ _Last updated: 2026-10-14 (cloud session 1, in progress)_
 ## Needs owner
 _(nothing blocking so far. All needed domains are reachable: HF (incl. LFS/xethub), download.pytorch.org, GitHub assets, crates/npm/PyPI.)_
 
-### Setup-script additions (installs made mid-session that don't persist)
-_(none so far — everything used is in the apt list of docs/CLOUD_SETUP.md; `uv` venvs and Playwright are re-created by scripts)_
-
 ## Current phase
-**Phase 0 (spikes, cloud) — finishing; Phase 1 (audio core) done in parallel while benchmarks run in the background.**
+**Phase 5 (UI) in progress; Phases 0–4 portable parts done; TTS parity + STT bench running in the background.**
 
-- [x] a. Skeleton: workspace, docs, `.gitignore`, `CLAUDE.md`
-- [x] b. `models/manifest.toml` + `scripts/fetch-models.sh` (pinned, SHA-256 verified; PocketTTS hashes confirmed identical to BRIEF §3.2; Whisper/VAD/eval hashes from HF LFS metadata)
-- [x] c. `scripts/gen-fixtures.sh` (synthetic speech ×8 languages, 21 media formats incl. video containers, edge cases, text-import inputs, PDFs) + `scripts/fleurs_subset.py` (pinned FLEURS subset, 10 utt × 8 languages via range reads)
-- [ ] d. TTS parity gate — reference (Python 2.1.0) generation running; Candle candidate built & works (see below); metrics script written
-- [ ] e. STT selection — `whisper-rs` bench tool built; runs pending
-- [x] f. Mac-only spikes drafted: `scripts/measure-idle-memory.sh`, `scripts/check-offline.sh`, cpal backend (type-checks for `aarch64-apple-darwin`)
+- [x] **Phase 0** a–c, f (skeleton, manifest + fetch, fixtures, Mac-only spikes drafted)
+- [ ] d. TTS parity gate — reference + Candle main set generated; Candle long texts generating; ASR + metrics + report + `listen.html` pending
+- [ ] e. STT selection — pipeline fixed (see DECISIONS C-009), bench re-running from scratch (`spike/stt-bench/run_all.sh`)
+- [x] **Phase 1** audio core (decode, resample, crash-safe WAV, recorder, export) — tests incl. 3 h soak and `kill -9`
+- [x] **Phase 2** STT pipeline (VAD windows, chunker, language vote, post-filters, checkpoints/resume), whisper-rs engine, `parlo-cli transcribe|lang`
+- [x] **Phase 3** (code) TTS pipeline + PocketTTS (Candle) engine behind `TtsEngine`, text import (txt/md/docx/epub/pdf-cleanup), `parlo-cli speak|bench` — real-engine tests pass; parity gate decision pending
+- [x] **Phase 4** (portable) model lifecycle, job manager, settings/workspace/retention, Tauri shell (`src-tauri`: typed IPC via tauri-specta, window lifecycle, menu, ticker) — compiles; Xvfb smoke run pending
+- [ ] **Phase 5** UI: views/stores/mock backend/settings/player/shortcuts/drag-drop done, 60+ vitest tests; screenshots (light+dark) in review; typecheck/lint pending bindings export
 
-### Phase 1 — audio core: DONE (portable parts)
-`parlo-core::audio` (symphonia 0.6 + pure-Rust Opus, MP4 edit lists, streaming rubato resampler, crash-safe WAV, WAV/MP3 export, >4 GB guard), `parlo-core::recorder` (rtrb ring → writer → supervisor: gaps, stall rebuild, default-device follow, sleep/wake, disk guard, pause/resume, recovery), `parlo-core::platform` traits (§5.7), `parlo-cli decode|info|record|recover|devices`.
-Tests (all on Linux): 27 decode tests (every §7.1 format ±50 ms, content-correlation), 16 recorder tests incl. **3 h accelerated soak** and 4 export tests, plus the `kill -9` test in parlo-cli.
+### Setup-script additions (installs made mid-session that don't persist)
+- `npx playwright install --with-deps webkit` (+ apt: libgtk-4-1, libgraphene, libevent, gstreamer plugins, libavif — pulled in by `--with-deps`). Add to the cloud setup script if screenshots should work without the agent re-installing.
 
 ## Measurements (machine: cloud x86_64 Xeon 2.8 GHz AVX-512, 4 vCPU, 15 GB — NOT Mac numbers)
 | What | Result | Date |
