@@ -189,11 +189,20 @@ fn script(app: &AppHandle, state: &Arc<AppState>, say: &dyn Fn(&str)) -> R<()> {
     let doc = std::path::Path::new("fixtures/text").join("headers_hyphens.pdf");
     if doc.exists() {
         let r = c::text_import(st(), doc.display().to_string());
-        // no PDF extractor on Linux: must be a clear error, not a crash
-        ensure(
-            r.is_err(),
-            "PDF import without PDFKit should report a clear error on Linux",
-        )?;
+        if cfg!(target_os = "macos") {
+            // PDFKit extracts and the portable cleanup removes headers/footers/hyphenation
+            let r = r.map_err(|e| format!("PDF import (PDFKit): {e:?}"))?;
+            ensure(
+                r.preview.contains("financial results") && !r.preview.contains("Page 1 of 4"),
+                "PDF import via PDFKit gave unexpected text",
+            )?;
+        } else {
+            // no PDF extractor on Linux: must be a clear error, not a crash
+            ensure(
+                r.is_err(),
+                "PDF import without PDFKit should report a clear error on Linux",
+            )?;
+        }
     }
     let md = tmp.join("notes.md");
     std::fs::write(
@@ -322,8 +331,17 @@ fn script(app: &AppHandle, state: &Arc<AppState>, say: &dyn Fn(&str)) -> R<()> {
             m4a.is_err(),
             "M4A export must report 'unavailable' on Linux",
         )?;
+        say("tts: WAV + MP3 export (M4A unavailable on Linux, reported cleanly)");
+    } else {
+        m4a.map_err(|e| format!("M4A export: {e:?}"))?;
+        ensure(
+            std::fs::metadata(tmp.join("out.m4a"))
+                .map(|m| m.len() > 1000)
+                .unwrap_or(false),
+            "m4a export is empty",
+        )?;
+        say("tts: WAV + MP3 + M4A export");
     }
-    say("tts: WAV + MP3 export (M4A unavailable on Linux, reported cleanly)");
     // export refuses to overwrite system locations / invalid destinations
     ensure(
         tauri::async_runtime::block_on(c::export_tts(
@@ -456,10 +474,13 @@ pub fn spawn(app: AppHandle, state: Arc<AppState>) {
             match script(&app, &state, &say) {
                 Ok(()) => {
                     println!("PARLO_SELFTEST_OK");
+                    // same as a normal quit: engines must be released before exit() (see RunEvent::Exit)
+                    state.host.unload_all_idle();
                     std::process::exit(0);
                 }
                 Err(e) => {
                     println!("PARLO_SELFTEST_FAIL: {e}");
+                    state.host.unload_all_idle();
                     std::process::exit(1);
                 }
             }

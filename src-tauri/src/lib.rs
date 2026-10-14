@@ -368,6 +368,11 @@ pub fn run() {
                 api.prevent_exit();
             }
         }
+        RunEvent::Exit => {
+            // ggml-metal asserts in its static destructor if a Metal-backed model is still alive at exit(),
+            // aborting the process (crash report on every quit) — release the engines first.
+            app.state::<Arc<AppState>>().host.unload_all_idle();
+        }
         #[cfg(target_os = "macos")]
         RunEvent::Reopen {
             has_visible_windows,
