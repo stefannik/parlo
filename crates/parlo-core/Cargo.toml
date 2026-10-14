@@ -3,5 +3,29 @@ name = "parlo-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
+
+[features]
+default = ["cpal-input"]
+# Real microphone capture through cpal (CoreAudio on macOS, ALSA on Linux).
+cpal-input = ["dep:cpal"]
 
 [dependencies]
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+hound = "3.5"
+symphonia = { version = "0.6.1", features = ["all"] }
+symphonia-adapter-opus-rs = "0.1.1"
+rubato = "5.0.1"
+rtrb = "0.4"
+crossbeam-channel = "0.5"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
+directories = "6"
+libc = "0.2"
+mp3lame-encoder = "0.2.5"
+cpal = { version = "0.18", optional = true }
+
+[dev-dependencies]
+tempfile = "3"
