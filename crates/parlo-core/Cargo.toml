@@ -6,9 +6,11 @@ license.workspace = true
 rust-version.workspace = true
 
 [features]
-default = ["cpal-input"]
+default = ["cpal-input", "mp3"]
 # Real microphone capture through cpal (CoreAudio on macOS, ALSA on Linux).
 cpal-input = ["dep:cpal"]
+# MP3 export through LAME (LGPL; needs a C compiler at build time).
+mp3 = ["dep:mp3lame-encoder"]
 
 [dependencies]
 thiserror = "2"
@@ -24,7 +26,7 @@ crossbeam-channel = "0.5"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
 directories = "6"
 libc = "0.2"
-mp3lame-encoder = "0.2.5"
+mp3lame-encoder = { version = "0.2.5", optional = true }
 cpal = { version = "0.18", optional = true }
 
 [dev-dependencies]
