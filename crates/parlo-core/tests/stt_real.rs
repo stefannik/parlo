@@ -4,37 +4,13 @@
 //! Uses `ggml-small-q8_0` (fast); the shipped default is large-v3-turbo-q8_0, which is more accurate, so these
 //! thresholds are conservative for it. Fixtures: scripts/gen-fixtures.sh, models: scripts/fetch-models.sh.
 mod common;
-use common::{fixture, model};
+use common::{fixture, model, norm_words, wer};
 use parlo_core::audio::prepare::prepare_audio;
 use parlo_core::audio::wav::{PcmFile, WavWriter};
 use parlo_core::stt::pipeline::{run_transcription, LanguageSetting, SttEvent, SttJob, Transcript};
 use parlo_core::stt::whisper::{SileroVad, WhisperConfig, WhisperEngine};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-
-fn norm_words(s: &str) -> Vec<String> {
-    s.to_lowercase()
-        .replace(['’', '\''], "")
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|w| !w.is_empty())
-        .map(String::from)
-        .collect()
-}
-
-/// Word error rate (Levenshtein over words) of `hyp` against `reference`.
-fn wer(reference: &str, hyp: &str) -> f64 {
-    let (r, h) = (norm_words(reference), norm_words(hyp));
-    let mut prev: Vec<usize> = (0..=h.len()).collect();
-    for i in 1..=r.len() {
-        let mut cur = vec![i; h.len() + 1];
-        for j in 1..=h.len() {
-            let sub = prev[j - 1] + usize::from(r[i - 1] != h[j - 1]);
-            cur[j] = sub.min(prev[j] + 1).min(cur[j - 1] + 1);
-        }
-        prev = cur;
-    }
-    prev[h.len()] as f64 / r.len().max(1) as f64
-}
 
 struct Rig {
     engine: WhisperEngine,

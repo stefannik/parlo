@@ -51,3 +51,27 @@ pub fn current_rss_mb() -> f64 {
         .unwrap_or(0.0)
         / 1024.0
 }
+
+pub fn norm_words(s: &str) -> Vec<String> {
+    s.to_lowercase()
+        .replace(['’', '\''], "")
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+/// Word error rate (Levenshtein over words) of `hyp` against `reference`.
+pub fn wer(reference: &str, hyp: &str) -> f64 {
+    let (r, h) = (norm_words(reference), norm_words(hyp));
+    let mut prev: Vec<usize> = (0..=h.len()).collect();
+    for i in 1..=r.len() {
+        let mut cur = vec![i; h.len() + 1];
+        for j in 1..=h.len() {
+            let sub = prev[j - 1] + usize::from(r[i - 1] != h[j - 1]);
+            cur[j] = sub.min(prev[j] + 1).min(cur[j - 1] + 1);
+        }
+        prev = cur;
+    }
+    prev[h.len()] as f64 / r.len().max(1) as f64
+}

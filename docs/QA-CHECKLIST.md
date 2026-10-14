@@ -14,10 +14,17 @@ Run on the Mac with the bundled app. Tick with date + commit.
 - [ ] Mic permission denied/revoked → guidance + button to System Settings
 - [ ] Muted mic > 10 s → inline warning
 
-## UI review (light + dark)
-- [ ] Every state in BRIEF §11.2–11.4
-- [ ] Keyboard-only use; focus rings visible
-- [ ] VoiceOver labels on primary controls
+## UI review (light + dark) — in the bundled app (WKWebView)
+Cloud pre-check done with Playwright-WebKit on every state below (`docs/screenshots/`); the Mac pass confirms WKWebView specifics.
+- [ ] Transcribe: empty · mic denied (guided fix) · recording (timer, level meter, banners, "Saved continuously") · paused · processing (stages, %, ETA, partial text, "Loading speech model…") · result (edit, Copy, Export ▾, Save audio, language badge → re-transcribe, mini player) · error (Show details/Copy details, Retry)
+- [ ] Speak: compose · imported (source chip, warnings, large-document preview) · voice picker (previews play) · generating (player active on first segment) · result (Export ▾, Reveal) · "out of date" marker · error
+- [ ] Settings (all six sections), recovery banner, drag-over overlay, toasts, confirm dialogs (Discard recording / New with edits / re-transcribe), quit dialog while recording
+- [ ] Overlay title bar: traffic lights don't overlap the segmented control; the bar drags the window; buttons inside it still click
+- [ ] Contrast in both themes (`npm --prefix ui run check:contrast` passes; eyeball the text-3 placeholders)
+- [ ] Reduced motion: no transitions with *System Settings → Accessibility → Reduce motion*
+- [ ] Keyboard-only: ⌘1/⌘2, ⌘R, ⌘P, ⌘O, ⌘↩, ⇧⌘C, ⌘E, ⌘,, Esc, Space (play/pause outside text fields); Tab order is sensible; focus rings visible; menus/popovers trap and restore focus
+- [ ] VoiceOver: segmented control announces "Transcribe, radio button, 1 of 2"; progress bars announce %; stage list is a live region; recorder timer not chatty; all icon buttons labelled
+- [ ] Idle: no timers/animation while nothing happens (Activity Monitor → CPU 0.0 %, no wake-ups); status chip countdown only while a model is loaded
 
 ## Acceptance scenarios (BRIEF §14.2)
 - [ ] 1–8 as listed
