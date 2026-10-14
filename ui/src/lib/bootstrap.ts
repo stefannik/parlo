@@ -1,0 +1,166 @@
+// Startup + global interactions (menu actions, shortcuts, drag-drop, quit prompt, visibility).
+import { backend } from '../backend'
+import type { Unlisten } from '../backend/types'
+import { classifyPath, baseName } from './format'
+import { useAppStore } from '../stores/app'
+import { useRecorderStore } from '../stores/recorder'
+import { useSpeakStore } from '../stores/speak'
+import { useToastStore } from '../stores/toast'
+import { useTranscribeStore } from '../stores/transcribe'
+
+/** Load persisted state and reattach to whatever the core is doing (recorder running while the window was closed, etc.). */
+export async function hydrate() {
+  const app = useAppStore()
+  const rec = useRecorderStore()
+  const tr = useTranscribeStore()
+  const sp = useSpeakStore()
+  await Promise.all([app.load(), rec.hydrate(), sp.loadVoices()])
+  sp.applyDefaults()
+  if (app.settings) tr.language = app.settings.default_language
+  const ws = await backend().workspaceGet()
+  if (ws.transcript) tr.restore(ws.transcript)
+  if (ws.tts) sp.restore(ws.tts)
+}
+
+export type Action = 'settings' | 'quit' | 'open' | 'record' | 'pause' | 'export' | 'copy_transcript' | 'tab_transcribe' | 'tab_speak' | 'generate'
+
+export async function runAction(action: string) {
+  const app = useAppStore()
+  const rec = useRecorderStore()
+  const tr = useTranscribeStore()
+  const sp = useSpeakStore()
+  // Dialogs own the keyboard: ignore global actions while one is open (except opening Settings from nowhere).
+  if (app.confirm || (app.settingsOpen && action !== 'settings')) return
+  switch (action as Action) {
+    case 'settings':
+      app.settingsOpen = !app.settingsOpen
+      break
+    case 'tab_transcribe':
+      app.tab = 'transcribe'
+      break
+    case 'tab_speak':
+      app.tab = 'speak'
+      break
+    case 'open': {
+      if (app.tab === 'speak') {
+        const p = await backend().pickFile('document')
+        if (p) await sp.importFile(p)
+      } else {
+        const p = await backend().pickFile('media')
+        if (p) await handlePath(p)
+      }
+      break
+    }
+    case 'record':
+      app.tab = 'transcribe'
+      await tr.toggleRecording()
+      break
+    case 'pause':
+      if (rec.active) await rec.togglePause()
+      break
+    case 'export':
+      if ((app.tab === 'transcribe' && tr.phase === 'result') || (app.tab === 'speak' && sp.phase === 'result')) app.exportSignal++
+      break
+    case 'copy_transcript':
+      if (tr.phase === 'result') await tr.copy()
+      break
+    case 'generate':
+      app.tab = 'speak'
+      await sp.generate()
+      break
+  }
+}
+
+/** Route a dropped / opened path: audio & video → Transcribe, documents → Speak. */
+export async function handlePath(path: string) {
+  const app = useAppStore()
+  const rec = useRecorderStore()
+  const tr = useTranscribeStore()
+  const sp = useSpeakStore()
+  const toast = useToastStore()
+  switch (classifyPath(path)) {
+    case 'media':
+      if (rec.active) return void toast.info('Stop the recording first, then drop the file again.')
+      if (tr.phase === 'processing') return void toast.info('Parlo is still transcribing. Wait for it to finish or cancel it first.')
+      if (tr.phase === 'result' && !(await tr.startNew())) return
+      app.tab = 'transcribe'
+      await tr.transcribeFile(path, tr.language)
+      break
+    case 'document':
+      if (sp.phase === 'generating') return void toast.info('Parlo is generating speech. Wait for it to finish or cancel it first.')
+      app.tab = 'speak'
+      await sp.importFile(path)
+      break
+    default:
+      toast.error(`Parlo can’t open “${baseName(path)}”. It handles audio, video, .txt, .md, .docx, .pdf and .epub files.`)
+  }
+}
+
+const KEYMAP: Array<{ test: (e: KeyboardEvent) => boolean; action: Action }> = [
+  { test: (e) => e.metaKey && !e.shiftKey && e.key === ',', action: 'settings' },
+  { test: (e) => e.metaKey && !e.shiftKey && e.key === '1', action: 'tab_transcribe' },
+  { test: (e) => e.metaKey && !e.shiftKey && e.key === '2', action: 'tab_speak' },
+  { test: (e) => e.metaKey && !e.shiftKey && e.key.toLowerCase() === 'o', action: 'open' },
+  { test: (e) => e.metaKey && !e.shiftKey && e.key.toLowerCase() === 'r', action: 'record' },
+  { test: (e) => e.metaKey && !e.shiftKey && e.key.toLowerCase() === 'p', action: 'pause' },
+  { test: (e) => e.metaKey && !e.shiftKey && e.key.toLowerCase() === 'e', action: 'export' },
+  { test: (e) => e.metaKey && e.shiftKey && e.key.toLowerCase() === 'c', action: 'copy_transcript' },
+  { test: (e) => e.metaKey && e.key === 'Enter', action: 'generate' },
+]
+
+/** Wire everything that talks to the outside world. Returns a disposer (used by tests). */
+export async function registerInteractions(): Promise<() => void> {
+  const b = backend()
+  const app = useAppStore()
+  const rec = useRecorderStore()
+  const off: Unlisten[] = []
+
+  off.push(await b.on('recorder:state', (e) => rec.onState(e)))
+  off.push(await b.on('recorder:warning', (e) => rec.onWarning(e.warning)))
+  off.push(await b.on('models:state', (e) => app.onModels(e)))
+  off.push(await b.on('menu:action', (e) => void runAction(e.action)))
+  off.push(await b.on('quit:requested', (e) => (app.quitPrompt = e)))
+  off.push(
+    await b.onFileDrop(
+      (paths) => {
+        app.dropHover = false
+        if (paths[0]) void handlePath(paths[0])
+      },
+      (over) => (app.dropHover = over),
+    ),
+  )
+
+  const onKey = (e: KeyboardEvent) => {
+    // In the real app the native menu owns ⌘-shortcuts (accelerators come back as `menu:action`); handling them here
+    // as well would fire twice. The mock/browser build has no menu, so it handles them itself.
+    if (b.isMock && !e.altKey && !e.ctrlKey) {
+      const hit = KEYMAP.find((k) => k.test(e))
+      if (hit) {
+        e.preventDefault()
+        void runAction(hit.action)
+        return
+      }
+    }
+    if (e.key === ' ' && !e.metaKey && !e.ctrlKey && !e.altKey && !app.confirm && !app.settingsOpen) {
+      const t = e.target as HTMLElement | null
+      const typing = t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.isContentEditable || t.tagName === 'BUTTON' || t.getAttribute('role') === 'menuitem' || t.getAttribute('role') === 'radio')
+      if (!typing) {
+        const btn = document.querySelector<HTMLButtonElement>('[data-testid="player-toggle"]')
+        if (btn && !btn.disabled) {
+          e.preventDefault()
+          btn.click()
+        }
+      }
+    }
+  }
+  const onVisibility = () => void b.setVisible(document.visibilityState === 'visible')
+  window.addEventListener('keydown', onKey)
+  document.addEventListener('visibilitychange', onVisibility)
+  void b.setVisible(document.visibilityState === 'visible')
+
+  return () => {
+    off.forEach((f) => f())
+    window.removeEventListener('keydown', onKey)
+    document.removeEventListener('visibilitychange', onVisibility)
+  }
+}

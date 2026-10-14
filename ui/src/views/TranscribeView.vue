@@ -168,7 +168,7 @@ defineExpose({ chooseFile })
         </div>
         <div class="actions">
           <button type="button" class="btn" data-testid="copy-button" @click="tr.copy()"><Icon name="copy" :size="16" /> Copy</button>
-          <MenuButton label="Export" :items="exportItems" icon="download" testid="export-button" @select="(id) => tr.exportAs(id as 'txt' | 'md')" />
+          <MenuButton label="Export" :items="exportItems" icon="download" testid="export-button" :signal="app.exportSignal" @select="(id) => tr.exportAs(id as 'txt' | 'md')" />
           <MenuButton v-if="tr.source?.recordingId" label="Save audio" :items="audioItems" testid="save-audio-button" @select="(id) => tr.saveAudio(id as 'wav' | 'm4a' | 'mp3')" />
           <button type="button" class="btn btn-primary" data-testid="new-button" @click="tr.startNew()"><Icon name="plus" :size="16" /> New</button>
         </div>

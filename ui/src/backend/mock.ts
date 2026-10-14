@@ -9,6 +9,7 @@ import type {
   MicPermission,
   RecorderStateEvent,
   RecordingInfoDto,
+  StorageEntryDto,
   RecoverableDto,
   SettingsDto,
   SettingsPatch,
@@ -483,6 +484,15 @@ export class MockBackend implements Backend {
     if (patch.transcript) this.workspace.transcript = patch.transcript
     if (patch.clear_tts) this.workspace.tts = null
     if (patch.tts) this.workspace.tts = patch.tts
+  }
+  private storage: Record<string, number> = { recordings: 412_000_000, outputs: 186_000_000, cache: 73_000_000, models: 1_354_000_000 }
+  async storageUsage(): Promise<StorageEntryDto[]> {
+    const label: Record<string, string> = { recordings: 'Recordings', outputs: 'Generated speech', cache: 'Cache', models: 'Models' }
+    return Object.entries(this.storage).map(([kind, bytes]) => ({ kind, label: label[kind]!, bytes, path: `/mock/Parlo/${kind}` }))
+  }
+  async storageClear(kind: 'outputs' | 'cache') {
+    this.storage[kind] = 0
+    return this.storageUsage()
   }
   async reveal(_path: string) {}
   async setVisible(visible: boolean) {

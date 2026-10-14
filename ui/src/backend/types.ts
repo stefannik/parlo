@@ -15,6 +15,7 @@ import type {
   RecorderWarningEvent,
   RecoverableDto,
   RecordingInfoDto,
+  StorageEntryDto,
   SettingsDto,
   SettingsPatch,
   SttEventDto,
@@ -81,6 +82,10 @@ export interface Backend {
 
   workspaceGet(): Promise<WorkspaceDto>
   workspaceUpdate(patch: WorkspacePatch): Promise<void>
+
+  storageUsage(): Promise<StorageEntryDto[]>
+  /** `outputs` (generated speech) or `cache` (decode cache); never touches recordings that were not transcribed. */
+  storageClear(kind: 'outputs' | 'cache'): Promise<StorageEntryDto[]>
 
   reveal(path: string): Promise<void>
   /** Tell the core whether the UI is visible (level-meter events only flow while recording AND visible). */

@@ -7,5 +7,5 @@ export default defineConfig({
   clearScreen: false,
   server: { port: 5173, strictPort: true },
   build: { target: 'safari16', sourcemap: false },
-  test: { environment: 'jsdom', globals: true },
+  test: { environment: 'jsdom', globals: true, setupFiles: ['src/test/setup.ts'] },
 })

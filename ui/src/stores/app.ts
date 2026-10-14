@@ -32,10 +32,10 @@ export const useAppStore = defineStore('app', () => {
     tts: { state: 'unloaded', unloadAt: null },
   })
   const dropHover = ref(false)
+  /** bumped by ⌘E; the visible Export menu opens when it changes */
+  const exportSignal = ref(0)
   const confirm = ref<ConfirmRequest | null>(null)
   const quitPrompt = ref<{ recording: boolean; job_running: boolean } | null>(null)
-  /** the status chip re-renders only when this changes (no per-second timer): see StatusChip.vue */
-  const now = ref(Date.now())
 
   const appearance = computed(() => settings.value?.appearance ?? 'system')
 
@@ -69,7 +69,6 @@ export const useAppStore = defineStore('app', () => {
       state: ev.state as EngineStatus['state'],
       unloadAt: ev.unload_in_ms != null ? Date.now() + ev.unload_in_ms : null,
     }
-    now.value = Date.now()
   }
 
   /** Promise-based confirmation sheet (never `confirm()`/`alert()`). */
@@ -103,9 +102,9 @@ export const useAppStore = defineStore('app', () => {
     recoverables,
     engines,
     dropHover,
+    exportSignal,
     confirm,
     quitPrompt,
-    now,
     load,
     updateSettings,
     applyTheme,

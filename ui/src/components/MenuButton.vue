@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Button that opens a small menu (Export ▾). Keyboard: Enter/Space/ArrowDown open, arrows move, Esc closes.
-import { nextTick, onBeforeUnmount, ref } from 'vue'
+import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import Icon from './Icon.vue'
 
 export interface MenuItem {
@@ -9,12 +9,19 @@ export interface MenuItem {
   hint?: string
   disabled?: boolean
 }
-const props = defineProps<{ label: string; items: MenuItem[]; icon?: string; primary?: boolean; disabled?: boolean; testid?: string; up?: boolean }>()
+const props = defineProps<{ label: string; items: MenuItem[]; icon?: string; primary?: boolean; disabled?: boolean; testid?: string; up?: boolean; signal?: number }>()
 const emit = defineEmits<{ select: [string] }>()
 
 const open = ref(false)
 const root = ref<HTMLElement | null>(null)
 const menu = ref<HTMLElement | null>(null)
+
+watch(
+  () => props.signal,
+  () => {
+    if (!open.value) void show()
+  },
+)
 
 function items() {
   return Array.from(menu.value?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not([disabled])') ?? [])

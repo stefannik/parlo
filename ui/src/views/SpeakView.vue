@@ -6,8 +6,10 @@ import Icon from '../components/Icon.vue'
 import MenuButton from '../components/MenuButton.vue'
 import VoicePicker from '../components/VoicePicker.vue'
 import { formatClock, formatEta, formatListening } from '../lib/format'
+import { useAppStore } from '../stores/app'
 import { useSpeakStore } from '../stores/speak'
 
+const app = useAppStore()
 const sp = useSpeakStore()
 
 const pct = computed(() => (sp.progress && sp.progress.totalChars > 0 ? Math.round((sp.progress.doneChars / sp.progress.totalChars) * 100) : null))
@@ -85,7 +87,7 @@ defineExpose({ openFile })
         <span v-if="sp.outOfDate" class="chip stale" data-testid="out-of-date"><Icon name="warn" :size="12" /> Out of date — the text or voice changed</span>
         <span v-else class="muted small tabular">{{ formatClock(sp.durationMs ?? 0) }}<template v-if="sp.cacheHit"> · reused from earlier</template> · Exports are always 1×</span>
         <span class="spacer" />
-        <MenuButton label="Export" :items="audioItems" icon="download" up testid="export-audio" @select="(id) => sp.exportAs(id as 'wav' | 'm4a' | 'mp3')" />
+        <MenuButton label="Export" :items="audioItems" icon="download" up testid="export-audio" :signal="app.exportSignal" @select="(id) => sp.exportAs(id as 'wav' | 'm4a' | 'mp3')" />
         <button type="button" class="btn" data-testid="reveal" @click="sp.reveal()"><Icon name="folder" :size="16" /> Reveal in Finder</button>
       </div>
     </div>
