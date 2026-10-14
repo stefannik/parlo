@@ -1,0 +1,12 @@
+[package]
+name = "parlo-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "parlo-cli"
+path = "src/main.rs"
+
+[dependencies]
+parlo-core = { path = "../parlo-core" }

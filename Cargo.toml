@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = ["crates/parlo-core", "crates/parlo-cli"]
+# src-tauri joins the workspace in Phase 4.
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+rust-version = "1.85"
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+debug = false
+
+[profile.dev.package."*"]
+opt-level = 2

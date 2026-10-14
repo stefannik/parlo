@@ -1,0 +1,17 @@
+/target
+**/node_modules
+.venv/
+**/.venv/
+/models/*
+!/models/manifest.toml
+/dist
+/fixtures/generated
+/fixtures/cache
+spike/**/out/
+spike/**/*.wav
+spike/**/.cache/
+*.log
+.DS_Store
+ui/dist
+src-tauri/gen
+__pycache__/
