@@ -48,11 +48,12 @@ export function listeningMinutes(words: number, speed = 1): number {
   return words / 150 / speed
 }
 
+/** "under 10 s", "~45 s", "~3 min", "~1 h 30 min" — an estimate, so always approximate. */
 export function formatListening(minutes: number): string {
-  if (minutes < 1 / 6) return '< 10 s'
-  if (minutes < 1) return `${Math.round(minutes * 60)} s`
-  if (minutes < 60) return `${Math.round(minutes)} min`
-  return `${Math.floor(minutes / 60)} h ${String(Math.round(minutes % 60)).padStart(2, '0')} min`
+  if (minutes < 1 / 6) return 'under 10 s'
+  if (minutes < 1) return `~${Math.round(minutes * 60)} s`
+  if (minutes < 60) return `~${Math.round(minutes)} min`
+  return `~${Math.floor(minutes / 60)} h ${String(Math.round(minutes % 60)).padStart(2, '0')} min`
 }
 
 export function baseName(path: string): string {

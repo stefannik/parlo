@@ -46,6 +46,8 @@ pub struct AppState {
     /// (recording && ui visible) gate for the level-meter ticker: the ticker thread sleeps on this condvar otherwise
     pub ticker: Arc<(Mutex<TickerGate>, Condvar)>,
     pub quitting: AtomicBool,
+    /// commands the UI has called at least once (read by the `PARLO_SMOKE` self-test)
+    pub seen: Mutex<std::collections::BTreeSet<&'static str>>,
 }
 
 #[derive(Default)]
@@ -135,6 +137,7 @@ impl AppState {
             next_import: Mutex::new(1),
             ticker: Arc::new((Mutex::new(TickerGate::default()), Condvar::new())),
             quitting: AtomicBool::new(false),
+            seen: Mutex::new(Default::default()),
         });
         // memory pressure → unload idle engines; critical also pauses the queue
         let jobs_ptr = Arc::downgrade(&state);

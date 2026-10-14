@@ -25,9 +25,9 @@ describe('format', () => {
     expect(countWords('')).toBe(0)
     expect(listeningMinutes(150)).toBe(1)
     expect(listeningMinutes(150, 2)).toBe(0.5)
-    expect(formatListening(0.05)).toBe('< 10 s')
-    expect(formatListening(2.4)).toBe('2 min')
-    expect(formatListening(90)).toBe('1 h 30 min')
+    expect(formatListening(0.05)).toBe('under 10 s')
+    expect(formatListening(2.4)).toBe('~2 min')
+    expect(formatListening(90)).toBe('~1 h 30 min')
   })
   it('classifies dropped files', () => {
     expect(classifyPath('/a/b/Talk.M4A')).toBe('media')

@@ -41,7 +41,11 @@ impl FallbackDecoder for AvFoundationDecoder {
         let asset = unsafe { AVURLAsset::URLAssetWithURL_options(&url, None) };
         // audio tracks (synchronous accessor is fine on a worker thread; deprecated on macOS 15 but still present)
         #[allow(deprecated)]
-        let tracks = unsafe { asset.tracksWithMediaType(objc2_av_foundation::AVMediaTypeAudio.expect("AVMediaTypeAudio")) };
+        let tracks = unsafe {
+            asset.tracksWithMediaType(
+                objc2_av_foundation::AVMediaTypeAudio.expect("AVMediaTypeAudio"),
+            )
+        };
         let Some(track) = tracks.firstObject() else {
             return Ok(false);
         };

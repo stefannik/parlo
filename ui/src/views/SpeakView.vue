@@ -56,7 +56,7 @@ defineExpose({ openFile })
 
     <div class="footer-row">
       <p class="muted small tabular counts" data-testid="counts">
-        {{ sp.words.toLocaleString() }} words · {{ sp.chars.toLocaleString() }} characters · ~{{ formatListening(sp.minutes1x) }} at 1×<template v-if="Math.abs(sp.speed - 1) > 0.01"> · ~{{ formatListening(sp.minutesAtSpeed) }} at {{ sp.speed.toFixed(2).replace(/0$/, '') }}×</template>
+        {{ sp.words.toLocaleString() }} words · {{ sp.chars.toLocaleString() }} characters · {{ formatListening(sp.minutes1x) }} at 1×<template v-if="Math.abs(sp.speed - 1) > 0.01"> · {{ formatListening(sp.minutesAtSpeed) }} at {{ sp.speed.toFixed(2).replace(/0$/, '') }}×</template>
       </p>
       <div class="row-actions">
         <button type="button" class="btn btn-ghost" :disabled="busy" data-testid="open-file" @click="openFile"><Icon name="folder" :size="16" /> Open file…</button>

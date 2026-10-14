@@ -31,6 +31,7 @@ type S<'a> = State<'a, Arc<AppState>>;
 #[tauri::command]
 #[specta::specta]
 pub fn app_info(state: S<'_>) -> AppInfo {
+    state.seen.lock().unwrap().insert("app_info");
     let m = &state.models;
     let mk = |name: &str, p: PathBuf| {
         let md = std::fs::metadata(&p).ok();
@@ -70,6 +71,7 @@ fn settings_dto(s: &Settings) -> SettingsDto {
 #[tauri::command]
 #[specta::specta]
 pub fn settings_get(state: S<'_>) -> SettingsDto {
+    state.seen.lock().unwrap().insert("settings_get");
     settings_dto(&state.settings.lock().unwrap())
 }
 
@@ -910,6 +912,7 @@ pub fn tts_resume(
 #[tauri::command]
 #[specta::specta]
 pub fn voices_list(state: S<'_>) -> Vec<VoiceDto> {
+    state.seen.lock().unwrap().insert("voices_list");
     let previews = state.models.previews_dir();
     parlo_core::tts::pocket::discover_voices(&state.models)
         .into_iter()
@@ -1147,6 +1150,7 @@ fn ws_dto(state: &AppState, ws: &Workspace) -> WorkspaceDto {
 #[tauri::command]
 #[specta::specta]
 pub fn workspace_get(app: AppHandle, state: S<'_>) -> WorkspaceDto {
+    state.seen.lock().unwrap().insert("workspace_get");
     let ws = state.workspace.lock().unwrap().clone();
     let _ = app
         .asset_protocol_scope()
@@ -1205,6 +1209,7 @@ pub fn reveal_in_finder(path: String) -> IpcResult<()> {
 #[tauri::command]
 #[specta::specta]
 pub fn ui_visibility(app: AppHandle, state: S<'_>, visible: bool) {
+    state.seen.lock().unwrap().insert("ui_visibility");
     {
         let (m, cv) = &*state.ticker;
         m.lock().unwrap().visible = visible;

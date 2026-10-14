@@ -242,11 +242,53 @@ fn spawn_level_ticker(app: AppHandle, state: Arc<AppState>) {
         .expect("spawn ticker");
 }
 
+/// `PARLO_SMOKE=1`: self-test used by the Linux/Xvfb smoke run. Passes when the bundled UI has loaded under the app's CSP
+/// and called the startup commands over IPC; prints `PARLO_SMOKE_OK`, waits `PARLO_SMOKE_HOLD_MS` (so a screenshot can
+/// be taken) and exits 0. Exits 1 after 90 s with the list of commands that never arrived.
+fn spawn_smoke_check(state: Arc<AppState>) {
+    const EXPECTED: [&str; 5] = [
+        "app_info",
+        "settings_get",
+        "voices_list",
+        "workspace_get",
+        "ui_visibility",
+    ];
+    let _ = std::thread::Builder::new()
+        .name("smoke".into())
+        .spawn(move || {
+            let start = std::time::Instant::now();
+            loop {
+                let seen = state.seen.lock().unwrap().clone();
+                let missing: Vec<&str> = EXPECTED
+                    .iter()
+                    .copied()
+                    .filter(|c| !seen.contains(c))
+                    .collect();
+                if missing.is_empty() {
+                    println!("PARLO_SMOKE_OK commands={:?}", seen);
+                    let hold = std::env::var("PARLO_SMOKE_HOLD_MS")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(0u64);
+                    std::thread::sleep(std::time::Duration::from_millis(hold));
+                    std::process::exit(0);
+                }
+                if start.elapsed() > std::time::Duration::from_secs(90) {
+                    eprintln!("PARLO_SMOKE_FAIL missing={missing:?}");
+                    std::process::exit(1);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+        });
+}
+
 pub fn run() {
     let builder = specta_builder();
     #[cfg(debug_assertions)]
-    if let Err(e) = builder.export(specta_typescript::Typescript::default(), BINDINGS_PATH) {
-        eprintln!("could not export TypeScript bindings: {e}");
+    if std::env::var_os("PARLO_UPDATE_BINDINGS").is_some() {
+        if let Err(e) = builder.export(specta_typescript::Typescript::default(), BINDINGS_PATH) {
+            eprintln!("could not export TypeScript bindings: {e}");
+        }
     }
 
     let app = tauri::Builder::default()
@@ -283,6 +325,9 @@ pub fn run() {
                 tracing::warn!("cleanup failed: {e}");
             }
             app.manage(state.clone());
+            if std::env::var_os("PARLO_SMOKE").is_some() {
+                spawn_smoke_check(state.clone());
+            }
             spawn_level_ticker(handle.clone(), state);
             let menu = build_menu(&handle)?;
             app.set_menu(menu)?;
@@ -334,14 +379,27 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    /// Regenerates `ui/src/bindings.ts` from the Rust definitions (run: `cargo test -p parlo-app export_bindings`).
+    /// The committed `ui/src/bindings.ts` must match the Rust definitions. Regenerate with
+    /// `PARLO_UPDATE_BINDINGS=1 cargo test -p parlo-app export_bindings`.
     #[test]
     fn export_bindings() {
+        let ts = || specta_typescript::Typescript::default();
+        if std::env::var_os("PARLO_UPDATE_BINDINGS").is_some() {
+            super::specta_builder()
+                .export(ts(), super::BINDINGS_PATH)
+                .expect("export bindings");
+            return;
+        }
+        let tmp = std::env::temp_dir().join(format!("parlo-bindings-{}.ts", std::process::id()));
         super::specta_builder()
-            .export(
-                specta_typescript::Typescript::default(),
-                super::BINDINGS_PATH,
-            )
+            .export(ts(), &tmp)
             .expect("export bindings");
+        let fresh = std::fs::read_to_string(&tmp).expect("read fresh bindings");
+        let _ = std::fs::remove_file(&tmp);
+        let committed = std::fs::read_to_string(super::BINDINGS_PATH).unwrap_or_default();
+        assert!(
+            fresh == committed,
+            "ui/src/bindings.ts is out of date with the Rust IPC types — run: PARLO_UPDATE_BINDINGS=1 cargo test -p parlo-app export_bindings"
+        );
     }
 }

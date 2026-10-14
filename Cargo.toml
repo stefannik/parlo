@@ -15,9 +15,15 @@ lto = "thin"
 codegen-units = 4
 debug = false
 
+[profile.dev]
+# line tables only: full debuginfo made the target dir exceed the cloud disk allowance
+debug = "line-tables-only"
+
 [profile.dev.package."*"]
 opt-level = 2
+debug = false
 
 # Tests run the real-time pipeline (3 h soak etc.); keep them fast.
 [profile.test]
 opt-level = 2
+debug = "line-tables-only"

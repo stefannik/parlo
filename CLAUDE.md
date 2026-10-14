@@ -23,7 +23,18 @@ Prior-art code from the owner's earlier app is in `docs/reference/ctric/` (read-
 cargo build -p parlo-cli                      # CLI (decode | info | record | recover | devices)
 cargo test --workspace                        # needs fixtures: scripts/gen-fixtures.sh (tests fail loudly if missing)
 cargo fmt --all --check && cargo clippy --all-targets -- -D warnings
-cargo check --target aarch64-apple-darwin -p parlo-core --no-default-features --features cpal-input   # macOS type-check from Linux (mp3/LAME needs a real C toolchain, so it is off)
+cargo check --target aarch64-apple-darwin -p parlo-core --no-default-features --features cpal-input   # macOS type-check from Linux (C deps — LAME, whisper.cpp — need a real macOS toolchain, so they are off)
+
+# --- Tauri app + UI (src-tauri = crate parlo-app, binary `parlo`; ui/ = Vue 3 + Pinia + Vite)
+npm --prefix ui ci && npm --prefix ui run build            # vue-tsc + vite build (ui/dist)
+npm --prefix ui test                                       # vitest: stores, mock-backend contract, app shell (61 tests)
+npm --prefix ui run lint && npm --prefix ui run typecheck && npm --prefix ui run check:contrast
+VITE_MOCK_BACKEND=1 npm --prefix ui run dev                # UI in a plain browser with fake engines/recorder (http://localhost:5173)
+PARLO_UPDATE_BINDINGS=1 cargo test -p parlo-app export_bindings   # regenerate ui/src/bindings.ts after changing src-tauri/src/ipc.rs (plain run = drift check)
+cargo build -p parlo-app --features tauri/custom-protocol && scripts/smoke-linux.sh   # app smoke run under Xvfb (software rendering)
+(cd scripts/screenshots && npm ci && node shoot.mjs ../../docs/screenshots)          # Playwright-WebKit screenshots, every state, light+dark
+scripts/build-app.sh [--dmg]                               # macOS only (drafted): dist/Parlo.app
+cargo check --target aarch64-apple-darwin -p parlo-macos   # type-check the macOS platform code from Linux
 
 # --- Models & fixtures (build/dev time only)
 scripts/fetch-models.sh [--only pockettts,whisper,vad,eval] [--match q8_0] [--verify-only]
