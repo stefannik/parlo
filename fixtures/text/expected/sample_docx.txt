@@ -1,0 +1,15 @@
+Sample Word Document
+
+This paragraph has bold and plain text, plus a hyphen-ated word and an em dash — like this.
+
+A section
+
+First list item
+
+Second list item
+
+Name, Qty.
+
+Tea, 2.
+
+Closing paragraph after the table.

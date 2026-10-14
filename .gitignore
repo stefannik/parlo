@@ -18,3 +18,5 @@ __pycache__/
 spike/**/target/
 spike/**/Cargo.lock.bak
 spike/tts-parity/logs/
+spike/stt-bench/data/
+spike/stt-bench/tmp/

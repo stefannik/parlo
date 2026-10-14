@@ -64,6 +64,14 @@ enum Cmd {
         #[arg(long)]
         carry_prompt: bool,
     },
+    /// Detect the spoken language of a file (VAD → first ≤ 3 chunks → vote), like the transcription pipeline does
+    Lang {
+        input: PathBuf,
+        #[arg(long, default_value = "ggml-large-v3-turbo-q8_0.bin")]
+        model: String,
+        #[arg(long, default_value_t = 4)]
+        threads: usize,
+    },
     /// Repair interrupted recordings in DIR (header repair from file length) and list recoverable ones
     Recover { dir: PathBuf },
     /// List audio input devices
@@ -120,6 +128,11 @@ fn run(cli: Cli) -> parlo_core::Result<()> {
             beam,
             carry_prompt,
         )?,
+        Cmd::Lang {
+            input,
+            model,
+            threads,
+        } => lang(input, model, threads)?,
         Cmd::Devices => {
             let input = parlo_core::platform::cpal_input::CpalInput::new();
             for d in parlo_core::platform::AudioInput::devices(&input)? {
@@ -331,5 +344,51 @@ fn transcribe(
         println!("{}", t.text);
         eprintln!("[done] {:.1}s audio, {} words, {} paragraphs, language {:?}, processed in {:.1}s (RTF {:.2}), model load {:.1}s", t.duration_s, t.word_count, t.paragraphs.len(), t.language.map(|l| l.code), t.processing_s, t.processing_s / t.duration_s.max(1e-9), load_s);
     }
+    Ok(())
+}
+
+fn lang(input: PathBuf, model: String, threads: usize) -> parlo_core::Result<()> {
+    use parlo_core::audio::wav::PcmFile;
+    use parlo_core::paths::{AppPaths, ModelPaths};
+    use parlo_core::stt::chunker::build_chunks;
+    use parlo_core::stt::engine::SttEngine;
+    use parlo_core::stt::filters::{analyze, should_transcribe};
+    use parlo_core::stt::vad::detect_file;
+    use parlo_core::stt::whisper::{SileroVad, WhisperConfig, WhisperEngine};
+    let mp = ModelPaths::discover();
+    let model_path = if std::path::Path::new(&model).exists() {
+        PathBuf::from(&model)
+    } else {
+        mp.whisper(&model)
+    };
+    let app = AppPaths::discover();
+    let cancel = AtomicBool::new(false);
+    let pcm_path = app
+        .decode_cache()
+        .join(format!("lang-{:x}.wav", std::process::id()));
+    std::fs::create_dir_all(app.decode_cache())?;
+    prepare::prepare_audio(&input, &pcm_path, &cancel, |_| {})?;
+    let pcm = PcmFile::open(&pcm_path)?;
+    let total = pcm.frames as f64 / 16000.0;
+    let mut vad = SileroVad::load(&mp.vad(), 300)?;
+    let spans = detect_file(&pcm, &mut vad, &cancel, 0.3, |_| {})?;
+    let chunks = build_chunks(&spans, total, Default::default(), &mut |a, b| (a + b) / 2.0);
+    let mut engine = WhisperEngine::load(&model_path, WhisperConfig::default())?;
+    let mut buf = Vec::new();
+    let mut guesses = Vec::new();
+    for c in chunks.iter().take(3) {
+        pcm.read_f32(
+            (c.start_s * 16000.0) as u64,
+            (c.len().min(30.0) * 16000.0) as usize,
+            &mut buf,
+        )?;
+        if !should_transcribe(&analyze(&buf)) {
+            continue;
+        }
+        let g = engine.detect_language(&buf, threads)?;
+        guesses.push(serde_json::json!([g.code, g.prob]));
+    }
+    let _ = std::fs::remove_file(&pcm_path);
+    println!("{}", serde_json::json!({"guesses": guesses}));
     Ok(())
 }

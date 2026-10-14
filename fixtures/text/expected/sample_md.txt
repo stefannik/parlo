@@ -1,0 +1,27 @@
+The Sample Document.
+
+A short introduction with bold text, inline code, and a link to the docs. Bare URL: https://example.com/page?x=1&y=2 should become "link".
+
+Shopping list.
+
+Two apples.
+
+Three oranges, ripe.
+
+A loaf of fresh bread.
+
+First step.
+
+Second step.
+
+Third step.
+
+Code.
+
+A quoted line that stays as text.
+
+Name, Qty.
+
+Tea, 2.
+
+Final paragraph.
