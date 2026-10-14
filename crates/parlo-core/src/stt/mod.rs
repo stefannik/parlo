@@ -16,8 +16,10 @@ pub use pipeline::{run_transcription, SttEvent, SttJob, SttSink, Transcript};
 pub use vad::SpeechDetector;
 
 /// Divisor converting whisper-rs VAD segment timestamps to seconds (see `whisper::SileroVad`).
+#[cfg(feature = "whisper")]
 pub(crate) fn vad_unit_divisor() -> f64 {
     VAD_UNIT_DIVISOR
 }
 /// Calibrated by tests/stt_vad.rs against known tone positions: whisper.cpp reports centiseconds.
+#[cfg(feature = "whisper")]
 const VAD_UNIT_DIVISOR: f64 = 100.0;

@@ -4,7 +4,6 @@ use std::path::PathBuf;
 #[cfg(not(target_arch = "wasm32"))]
 use candle_core::Device;
 
-
 /// Resolve a weights/tokenizer path. **Offline-only patch (Parlo):** `hf://` paths are rejected;
 /// callers must pass local file paths. The shipped app never reaches the network.
 #[cfg(not(target_arch = "wasm32"))]

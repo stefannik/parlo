@@ -12,7 +12,9 @@ impl AacEncoder for UnavailableAac {
         false
     }
     fn encode_wav_to_m4a(&self, _wav: &Path, _dest: &Path, _kbps: u32) -> Result<()> {
-        Err(Error::Encode("M4A export is not available on this platform".into()))
+        Err(Error::Encode(
+            "M4A export is not available on this platform".into(),
+        ))
     }
 }
 
@@ -32,7 +34,10 @@ impl Platform {
         #[cfg(feature = "cpal-input")]
         let input: Arc<dyn AudioInput> = Arc::new(super::cpal_input::CpalInput::new());
         #[cfg(not(feature = "cpal-input"))]
-        let input: Arc<dyn AudioInput> = Arc::new(super::file_source::FileSource::counter(48_000, super::file_source::Mode::Realtime));
+        let input: Arc<dyn AudioInput> = Arc::new(super::file_source::FileSource::counter(
+            48_000,
+            super::file_source::Mode::Realtime,
+        ));
         Self {
             input,
             power: Arc::new(NoopPowerGuard),

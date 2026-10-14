@@ -13,7 +13,12 @@ const DISPATCH_MEMORYPRESSURE_CRITICAL: usize = 0x04;
 
 extern "C" {
     static _dispatch_source_type_memorypressure: c_void;
-    fn dispatch_source_create(kind: *const c_void, handle: usize, mask: usize, queue: *mut c_void) -> *mut c_void;
+    fn dispatch_source_create(
+        kind: *const c_void,
+        handle: usize,
+        mask: usize,
+        queue: *mut c_void,
+    ) -> *mut c_void;
     fn dispatch_source_set_event_handler(source: *mut c_void, handler: &block2::Block<dyn Fn()>);
     fn dispatch_source_get_data(source: *mut c_void) -> usize;
     fn dispatch_resume(object: *mut c_void);
@@ -29,7 +34,14 @@ impl MacMemoryPressure {
         let subs: Arc<Mutex<Vec<Sender<MemoryPressureLevel>>>> = Arc::new(Mutex::new(Vec::new()));
         unsafe {
             let queue = dispatch_get_global_queue(0, 0);
-            let src = dispatch_source_create(&_dispatch_source_type_memorypressure as *const c_void, 0, DISPATCH_MEMORYPRESSURE_NORMAL | DISPATCH_MEMORYPRESSURE_WARN | DISPATCH_MEMORYPRESSURE_CRITICAL, queue);
+            let src = dispatch_source_create(
+                &_dispatch_source_type_memorypressure as *const c_void,
+                0,
+                DISPATCH_MEMORYPRESSURE_NORMAL
+                    | DISPATCH_MEMORYPRESSURE_WARN
+                    | DISPATCH_MEMORYPRESSURE_CRITICAL,
+                queue,
+            );
             if src.is_null() {
                 tracing::warn!("could not create the memory-pressure dispatch source");
                 return Self { subs };

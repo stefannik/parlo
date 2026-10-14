@@ -123,7 +123,11 @@ struct FakeFallback {
     calls: std::sync::atomic::AtomicUsize,
 }
 impl parlo_core::platform::FallbackDecoder for FakeFallback {
-    fn decode_to_wav16k(&self, _src: &std::path::Path, dest: &std::path::Path) -> parlo_core::error::Result<bool> {
+    fn decode_to_wav16k(
+        &self,
+        _src: &std::path::Path,
+        dest: &std::path::Path,
+    ) -> parlo_core::error::Result<bool> {
         self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         if !self.handles {
             return Ok(false);
@@ -138,7 +142,10 @@ impl parlo_core::platform::FallbackDecoder for FakeFallback {
 #[test]
 fn fallback_decoder_rescues_unsupported_files() {
     let dir = tempfile::tempdir().unwrap();
-    let fb = FakeFallback { handles: true, calls: 0.into() };
+    let fb = FakeFallback {
+        handles: true,
+        calls: 0.into(),
+    };
     let p = prepare_audio_with(
         &fixture("generated/formats/garbage.mp3"),
         &dir.path().join("o.wav"),
@@ -150,13 +157,19 @@ fn fallback_decoder_rescues_unsupported_files() {
     assert_eq!(fb.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
     assert!((p.duration_s - 2.0).abs() < 0.01, "{}", p.duration_s);
     assert!(dir.path().join("o.wav").exists());
-    assert!(!dir.path().join("o.part").exists(), "no temp file left behind");
+    assert!(
+        !dir.path().join("o.part").exists(),
+        "no temp file left behind"
+    );
 }
 
 #[test]
 fn fallback_decoder_declining_keeps_the_original_error() {
     let dir = tempfile::tempdir().unwrap();
-    let fb = FakeFallback { handles: false, calls: 0.into() };
+    let fb = FakeFallback {
+        handles: false,
+        calls: 0.into(),
+    };
     let e = prepare_audio_with(
         &fixture("generated/formats/garbage.mp3"),
         &dir.path().join("o.wav"),
@@ -165,7 +178,13 @@ fn fallback_decoder_declining_keeps_the_original_error() {
         Some(&fb),
     )
     .unwrap_err();
-    assert!(matches!(e, Error::Decode(DecodeError::Unsupported(_) | DecodeError::Corrupt(_))), "{e:?}");
+    assert!(
+        matches!(
+            e,
+            Error::Decode(DecodeError::Unsupported(_) | DecodeError::Corrupt(_))
+        ),
+        "{e:?}"
+    );
     assert_eq!(fb.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
     assert!(!dir.path().join("o.wav").exists() && !dir.path().join("o.part").exists());
 }
@@ -173,8 +192,18 @@ fn fallback_decoder_declining_keeps_the_original_error() {
 #[test]
 fn fallback_decoder_is_not_consulted_for_good_files() {
     let dir = tempfile::tempdir().unwrap();
-    let fb = FakeFallback { handles: true, calls: 0.into() };
-    prepare_audio_with(&fixture("generated/formats/flac.flac"), &dir.path().join("o.wav"), &AtomicBool::new(false), |_| {}, Some(&fb)).unwrap();
+    let fb = FakeFallback {
+        handles: true,
+        calls: 0.into(),
+    };
+    prepare_audio_with(
+        &fixture("generated/formats/flac.flac"),
+        &dir.path().join("o.wav"),
+        &AtomicBool::new(false),
+        |_| {},
+        Some(&fb),
+    )
+    .unwrap();
     assert_eq!(fb.calls.load(std::sync::atomic::Ordering::SeqCst), 0);
 }
 

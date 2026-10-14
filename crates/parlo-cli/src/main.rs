@@ -169,8 +169,33 @@ fn run(cli: Cli) -> parlo_core::Result<()> {
             model,
             threads,
         } => lang(input, model, threads)?,
-        Cmd::Speak { text, file, voice, quality, out, previews, job_dir, outputs_dir } => speak(text, file, voice, quality, out, previews, job_dir, outputs_dir)?,
-        Cmd::Bench { what, input, parity, repeat, model, threads } => bench(what, input, parity, repeat, model, threads)?,
+        Cmd::Speak {
+            text,
+            file,
+            voice,
+            quality,
+            out,
+            previews,
+            job_dir,
+            outputs_dir,
+        } => speak(
+            text,
+            file,
+            voice,
+            quality,
+            out,
+            previews,
+            job_dir,
+            outputs_dir,
+        )?,
+        Cmd::Bench {
+            what,
+            input,
+            parity,
+            repeat,
+            model,
+            threads,
+        } => bench(what, input, parity, repeat, model, threads)?,
         Cmd::Devices => {
             let input = parlo_core::platform::cpal_input::CpalInput::new();
             for d in parlo_core::platform::AudioInput::devices(&input)? {
@@ -444,7 +469,16 @@ fn peak_rss_mb() -> f64 {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn speak(text: Option<String>, file: Option<PathBuf>, voice: String, quality: String, out: Option<PathBuf>, previews: bool, job_dir: Option<PathBuf>, outputs_dir: Option<PathBuf>) -> parlo_core::Result<()> {
+fn speak(
+    text: Option<String>,
+    file: Option<PathBuf>,
+    voice: String,
+    quality: String,
+    out: Option<PathBuf>,
+    previews: bool,
+    job_dir: Option<PathBuf>,
+    outputs_dir: Option<PathBuf>,
+) -> parlo_core::Result<()> {
     use parlo_core::paths::{AppPaths, ModelPaths};
     use parlo_core::tts::pocket::PocketEngine;
     use parlo_core::tts::{run_tts, Quality, TtsEngine, TtsEvent, TtsJob};
@@ -452,39 +486,88 @@ fn speak(text: Option<String>, file: Option<PathBuf>, voice: String, quality: St
     let app = AppPaths::discover();
     let t_load = std::time::Instant::now();
     let mut engine = PocketEngine::load(&mp)?;
-    eprintln!("[load] speech model ready in {:.2}s", t_load.elapsed().as_secs_f64());
-    let q = if quality == "fast" { Quality::Fast } else { Quality::Standard };
+    eprintln!(
+        "[load] speech model ready in {:.2}s",
+        t_load.elapsed().as_secs_f64()
+    );
+    let q = if quality == "fast" {
+        Quality::Fast
+    } else {
+        Quality::Standard
+    };
     let cancel = AtomicBool::new(false);
     if previews {
         let dir = mp.previews_dir();
         std::fs::create_dir_all(&dir)?;
         for v in engine.voices() {
-            let sentence = format!("Hello, I'm {}. This is how I sound when I read your text aloud.", v.label);
-            let job = TtsJob { blocks: parlo_core::text::text_to_blocks(&sentence), voice: v.id.clone(), quality: Quality::Standard, outputs_dir: app.cache.join("preview-outputs"), job_dir: app.cache.join(format!("preview-job-{}", v.id)) };
+            let sentence = format!(
+                "Hello, I'm {}. This is how I sound when I read your text aloud.",
+                v.label
+            );
+            let job = TtsJob {
+                blocks: parlo_core::text::text_to_blocks(&sentence),
+                voice: v.id.clone(),
+                quality: Quality::Standard,
+                outputs_dir: app.cache.join("preview-outputs"),
+                job_dir: app.cache.join(format!("preview-job-{}", v.id)),
+            };
             let o = run_tts(&job, &mut engine, &mut |_: TtsEvent| {}, &cancel)?;
             let dest = dir.join(format!("{}.mp3", v.id));
             parlo_core::audio::encode::export_mp3(&o.segments, &dest, 64)?;
-            eprintln!("[preview] {} -> {} ({:.1}s)", v.id, dest.display(), o.meta.duration_ms as f64 / 1000.0);
+            eprintln!(
+                "[preview] {} -> {} ({:.1}s)",
+                v.id,
+                dest.display(),
+                o.meta.duration_ms as f64 / 1000.0
+            );
         }
         return Ok(());
     }
     let blocks = if let Some(f) = file {
         parlo_core::text::import_file(&f, None)?.blocks
     } else {
-        parlo_core::text::text_to_blocks(&text.ok_or_else(|| parlo_core::Error::Other("give some text, or --file".into()))?)
+        parlo_core::text::text_to_blocks(
+            &text.ok_or_else(|| parlo_core::Error::Other("give some text, or --file".into()))?,
+        )
     };
     let out = out.unwrap_or_else(|| PathBuf::from("speak.wav"));
-    let job = TtsJob { blocks, voice, quality: q, outputs_dir: outputs_dir.unwrap_or_else(|| app.tts_outputs()), job_dir: job_dir.unwrap_or_else(|| app.jobs().join(format!("cli-tts-{:x}", std::process::id()))) };
+    let job = TtsJob {
+        blocks,
+        voice,
+        quality: q,
+        outputs_dir: outputs_dir.unwrap_or_else(|| app.tts_outputs()),
+        job_dir: job_dir
+            .unwrap_or_else(|| app.jobs().join(format!("cli-tts-{:x}", std::process::id()))),
+    };
     let t = std::time::Instant::now();
     let mut ttfa: Option<f64> = None;
-    let o = run_tts(&job, &mut engine, &mut |e: TtsEvent| match e {
-        TtsEvent::SegmentReady { index, duration_ms, .. } => {
-            ttfa.get_or_insert(t.elapsed().as_secs_f64());
-            eprintln!("[segment {index}] ready ({:.1}s of audio)", duration_ms as f64 / 1000.0);
-        }
-        TtsEvent::Progress { done_chars, total_chars, eta_ms } => eprintln!("[progress] {done_chars}/{total_chars} chars, ETA {}", eta_ms.map(|m| format!("{}s", m / 1000)).unwrap_or_else(|| "?".into())),
-        TtsEvent::Done { .. } => {}
-    }, &cancel)?;
+    let o = run_tts(
+        &job,
+        &mut engine,
+        &mut |e: TtsEvent| match e {
+            TtsEvent::SegmentReady {
+                index, duration_ms, ..
+            } => {
+                ttfa.get_or_insert(t.elapsed().as_secs_f64());
+                eprintln!(
+                    "[segment {index}] ready ({:.1}s of audio)",
+                    duration_ms as f64 / 1000.0
+                );
+            }
+            TtsEvent::Progress {
+                done_chars,
+                total_chars,
+                eta_ms,
+            } => eprintln!(
+                "[progress] {done_chars}/{total_chars} chars, ETA {}",
+                eta_ms
+                    .map(|m| format!("{}s", m / 1000))
+                    .unwrap_or_else(|| "?".into())
+            ),
+            TtsEvent::Done { .. } => {}
+        },
+        &cancel,
+    )?;
     match out.extension().and_then(|e| e.to_str()) {
         Some("mp3") => parlo_core::audio::encode::export_mp3(&o.segments, &out, 96)?,
         _ => {
@@ -496,16 +579,28 @@ fn speak(text: Option<String>, file: Option<PathBuf>, voice: String, quality: St
     Ok(())
 }
 
-fn bench(what: String, input: Option<PathBuf>, parity: bool, repeat: usize, model: String, threads: usize) -> parlo_core::Result<()> {
+fn bench(
+    what: String,
+    input: Option<PathBuf>,
+    parity: bool,
+    repeat: usize,
+    model: String,
+    threads: usize,
+) -> parlo_core::Result<()> {
     use parlo_core::paths::ModelPaths;
     match (what.as_str(), parity) {
         ("tts", true) => {
             // The full parity suite (Python reference vs the Rust engine, WER, speaker similarity, artifacts, RTF, RSS) is
             // orchestrated by scripts/tts-parity.sh (uv venv + the Rust runners); this just launches it.
             let root = ModelPaths::discover().root.join("..");
-            let status = std::process::Command::new("bash").arg(root.join("scripts/tts-parity.sh")).status().map_err(parlo_core::Error::IoBare)?;
+            let status = std::process::Command::new("bash")
+                .arg(root.join("scripts/tts-parity.sh"))
+                .status()
+                .map_err(parlo_core::Error::IoBare)?;
             if !status.success() {
-                return Err(parlo_core::Error::Other("parity suite failed (see spike/tts-parity/out/report.md)".into()));
+                return Err(parlo_core::Error::Other(
+                    "parity suite failed (see spike/tts-parity/out/report.md)".into(),
+                ));
             }
             Ok(())
         }
@@ -521,17 +616,43 @@ fn bench(what: String, input: Option<PathBuf>, parity: bool, repeat: usize, mode
                 let t = std::time::Instant::now();
                 let mut first: Option<f64> = None;
                 let mut n = 0usize;
-                e.synthesize(text, "george", Quality::Standard, &mut |s: &[f32]| { first.get_or_insert(t.elapsed().as_secs_f64()); n += s.len(); Ok(()) }, &cancel)?;
+                e.synthesize(
+                    text,
+                    "george",
+                    Quality::Standard,
+                    &mut |s: &[f32]| {
+                        first.get_or_insert(t.elapsed().as_secs_f64());
+                        n += s.len();
+                        Ok(())
+                    },
+                    &cancel,
+                )?;
                 let wall = t.elapsed().as_secs_f64();
                 let audio = n as f64 / e.sample_rate() as f64;
-                println!("{}", serde_json::json!({"run": i, "audio_s": audio, "gen_s": wall, "rtf": wall / audio, "ttfa_s": first, "model_load_s": load_s, "peak_rss_mb": peak_rss_mb()}));
+                println!(
+                    "{}",
+                    serde_json::json!({"run": i, "audio_s": audio, "gen_s": wall, "rtf": wall / audio, "ttfa_s": first, "model_load_s": load_s, "peak_rss_mb": peak_rss_mb()})
+                );
             }
             Ok(())
         }
         ("stt", _) => {
-            let input = input.ok_or_else(|| parlo_core::Error::Other("bench stt <audio file>".into()))?;
-            transcribe(input, model, "auto".into(), threads, None, None, true, 1, false)
+            let input =
+                input.ok_or_else(|| parlo_core::Error::Other("bench stt <audio file>".into()))?;
+            transcribe(
+                input,
+                model,
+                "auto".into(),
+                threads,
+                None,
+                None,
+                true,
+                1,
+                false,
+            )
         }
-        (other, _) => Err(parlo_core::Error::Other(format!("unknown benchmark '{other}' (tts | stt)"))),
+        (other, _) => Err(parlo_core::Error::Other(format!(
+            "unknown benchmark '{other}' (tts | stt)"
+        ))),
     }
 }

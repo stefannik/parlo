@@ -11,9 +11,9 @@ pub mod system;
 pub mod cpal_input;
 
 pub use audio_input::{AudioInput, DeviceInfo, DeviceSelector, InputCtl, InputEvent, OpenedStream};
+pub use native::Platform;
 pub use system::{
     AacEncoder, DiskSpace, FallbackDecoder, ManualMemoryPressure, ManualSleepWake, MemoryPressure,
     MemoryPressureLevel, MemoryRelief, NoopPowerGuard, PdfTextExtractor, PowerEvent, PowerGuard,
     SleepWakeEvents, SystemDisk,
 };
-pub use native::Platform;

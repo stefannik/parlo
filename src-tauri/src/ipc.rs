@@ -17,7 +17,11 @@ pub struct IpcError {
 
 impl IpcError {
     pub fn new(code: &str, message: impl Into<String>) -> Self {
-        Self { code: code.into(), message: message.into(), detail: None }
+        Self {
+            code: code.into(),
+            message: message.into(),
+            detail: None,
+        }
     }
 }
 
@@ -34,7 +38,11 @@ impl From<Error> for IpcError {
             Error::Other(m) if m.contains("model") && m.contains("not found") => "model_missing",
             _ => "other",
         };
-        Self { code: code.into(), message, detail: Some(format!("{e:?}")) }
+        Self {
+            code: code.into(),
+            message,
+            detail: Some(format!("{e:?}")),
+        }
     }
 }
 
@@ -183,14 +191,30 @@ pub struct RecorderStateEvent {
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RecorderWarningDto {
-    DeviceChanged { from: String, to: String },
-    PinnedDeviceLost { pinned: String, fallback: String },
-    StreamRestarted { reason: String },
-    ResumedAfterSleep { #[specta(type = specta_typescript::Number)] gap_ms: u64 },
-    LowDisk { #[specta(type = specta_typescript::Number)] free_mb: u64 },
+    DeviceChanged {
+        from: String,
+        to: String,
+    },
+    PinnedDeviceLost {
+        pinned: String,
+        fallback: String,
+    },
+    StreamRestarted {
+        reason: String,
+    },
+    ResumedAfterSleep {
+        #[specta(type = specta_typescript::Number)]
+        gap_ms: u64,
+    },
+    LowDisk {
+        #[specta(type = specta_typescript::Number)]
+        free_mb: u64,
+    },
     SilentInput,
     Clipping,
-    Stopped { reason: String },
+    Stopped {
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
@@ -268,13 +292,40 @@ pub struct TranscriptDto {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SttEventDto {
     /// `preparing` | `detecting_speech` | `detecting_language` | `loading_model` | `transcribing`
-    Stage { stage: String },
-    StageProgress { #[specta(type = specta_typescript::Number)] fraction: f64 },
-    Language { code: String, #[specta(type = specta_typescript::Number)] prob: f32 },
-    Progress { #[specta(type = specta_typescript::Number)] done_s: f64, #[specta(type = specta_typescript::Number)] total_s: f64, #[specta(type = Option<specta_typescript::Number>)] eta_ms: Option<u64> },
-    Paragraph { index: u32, text: String, #[specta(type = specta_typescript::Number)] start_s: f64, #[specta(type = specta_typescript::Number)] end_s: f64 },
-    Done { transcript: TranscriptDto },
-    Error { error: IpcError },
+    Stage {
+        stage: String,
+    },
+    StageProgress {
+        #[specta(type = specta_typescript::Number)]
+        fraction: f64,
+    },
+    Language {
+        code: String,
+        #[specta(type = specta_typescript::Number)]
+        prob: f32,
+    },
+    Progress {
+        #[specta(type = specta_typescript::Number)]
+        done_s: f64,
+        #[specta(type = specta_typescript::Number)]
+        total_s: f64,
+        #[specta(type = Option<specta_typescript::Number>)]
+        eta_ms: Option<u64>,
+    },
+    Paragraph {
+        index: u32,
+        text: String,
+        #[specta(type = specta_typescript::Number)]
+        start_s: f64,
+        #[specta(type = specta_typescript::Number)]
+        end_s: f64,
+    },
+    Done {
+        transcript: TranscriptDto,
+    },
+    Error {
+        error: IpcError,
+    },
 }
 
 // ---------------------------------------------------------------------------------------------------- TTS
@@ -296,11 +347,31 @@ pub struct TtsRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TtsEventDto {
-    Stage { stage: String },
-    Progress { done_chars: u32, total_chars: u32, #[specta(type = Option<specta_typescript::Number>)] eta_ms: Option<u64> },
-    SegmentReady { index: u32, path: String, #[specta(type = specta_typescript::Number)] duration_ms: u64 },
-    Done { output_id: String, #[specta(type = specta_typescript::Number)] duration_ms: u64, segments: Vec<String>, cache_hit: bool },
-    Error { error: IpcError },
+    Stage {
+        stage: String,
+    },
+    Progress {
+        done_chars: u32,
+        total_chars: u32,
+        #[specta(type = Option<specta_typescript::Number>)]
+        eta_ms: Option<u64>,
+    },
+    SegmentReady {
+        index: u32,
+        path: String,
+        #[specta(type = specta_typescript::Number)]
+        duration_ms: u64,
+    },
+    Done {
+        output_id: String,
+        #[specta(type = specta_typescript::Number)]
+        duration_ms: u64,
+        segments: Vec<String>,
+        cache_hit: bool,
+    },
+    Error {
+        error: IpcError,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -396,9 +467,22 @@ pub struct WorkspacePatch {
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RecoverableDto {
-    Recording { id: String, wav_path: String, #[specta(type = specta_typescript::Number)] duration_ms: u64, started_at: String },
-    SttJob { job_id: String, source_name: String },
-    TtsJob { job_id: String, text_preview: String, voice: String },
+    Recording {
+        id: String,
+        wav_path: String,
+        #[specta(type = specta_typescript::Number)]
+        duration_ms: u64,
+        started_at: String,
+    },
+    SttJob {
+        job_id: String,
+        source_name: String,
+    },
+    TtsJob {
+        job_id: String,
+        text_preview: String,
+        voice: String,
+    },
 }
 
 // ---------------------------------------------------------------------------------------------------- storage

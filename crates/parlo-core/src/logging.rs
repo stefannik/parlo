@@ -45,13 +45,24 @@ impl Inner {
 
 impl RotatingFile {
     pub fn new(dir: impl Into<PathBuf>, base: &str, max_bytes: u64, keep: usize) -> Self {
-        Self { inner: Arc::new(Mutex::new(Inner { dir: dir.into(), base: base.into(), max_bytes, keep: keep.max(2), file: None, written: 0 })) }
+        Self {
+            inner: Arc::new(Mutex::new(Inner {
+                dir: dir.into(),
+                base: base.into(),
+                max_bytes,
+                keep: keep.max(2),
+                file: None,
+                written: 0,
+            })),
+        }
     }
     pub fn standard(dir: impl Into<PathBuf>) -> Self {
         Self::new(dir, "parlo", 2 * 1024 * 1024, 5)
     }
     pub fn handle(&self) -> RotatingHandle {
-        RotatingHandle { inner: self.inner.clone() }
+        RotatingHandle {
+            inner: self.inner.clone(),
+        }
     }
 }
 

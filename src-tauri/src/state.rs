@@ -2,7 +2,7 @@
 
 use crate::ipc::*;
 use parlo_core::jobs::{JobInfo, JobManager, JobState};
-use parlo_core::models::{EngineKind, IdleTimeout, ModelHost, ModelState, ModelsEvent, Slot};
+use parlo_core::models::{EngineKind, ModelHost, ModelState, ModelsEvent, Slot};
 use parlo_core::paths::{AppPaths, ModelPaths};
 use parlo_core::platform::Platform;
 use parlo_core::recorder::RecorderHandle;
@@ -87,7 +87,8 @@ impl AppState {
 
         let m = models.clone();
         let stt = host.slot(EngineKind::Stt, move || {
-            let engine = WhisperEngine::load(&m.whisper(DEFAULT_WHISPER_MODEL), WhisperConfig::default())?;
+            let engine =
+                WhisperEngine::load(&m.whisper(DEFAULT_WHISPER_MODEL), WhisperConfig::default())?;
             let vad = SileroVad::load(&m.vad(), 300)?;
             Ok(SttBundle { engine, vad })
         });
@@ -108,7 +109,14 @@ impl AppState {
                     JobState::Failed(m) => ("failed", Some(m.clone())),
                     JobState::Cancelled => ("cancelled", None),
                 };
-                let _ = JobChangedEvent { id: i.id as u32, engine: engine_str(i.engine).into(), label: i.label.clone(), state: state.into(), error }.emit(&app_for_jobs);
+                let _ = JobChangedEvent {
+                    id: i.id as u32,
+                    engine: engine_str(i.engine).into(),
+                    label: i.label.clone(),
+                    state: state.into(),
+                    error,
+                }
+                .emit(&app_for_jobs);
             }),
         );
 
@@ -130,16 +138,14 @@ impl AppState {
         });
         // memory pressure → unload idle engines; critical also pauses the queue
         let jobs_ptr = Arc::downgrade(&state);
-        state.host.watch_memory_pressure(&*state.platform.memory, move |critical| {
-            if let Some(s) = jobs_ptr.upgrade() {
-                s.jobs.set_paused(critical);
-            }
-        });
         state
-    }
-
-    pub fn idle_timeout(&self) -> IdleTimeout {
-        self.settings.lock().unwrap().model_idle_timeout.to_timeout()
+            .host
+            .watch_memory_pressure(&*state.platform.memory, move |critical| {
+                if let Some(s) = jobs_ptr.upgrade() {
+                    s.jobs.set_paused(critical);
+                }
+            });
+        state
     }
 
     pub fn recordings_dir(&self) -> PathBuf {

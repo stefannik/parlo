@@ -6,7 +6,9 @@ use super::assemble::{Assembler, Paragraph, Seg};
 use super::checkpoint::{Checkpoint, ChunkRecord, JobMeta};
 use super::chunker::{build_chunks, ChunkParams};
 use super::engine::{LangGuess, SttEngine, TranscribeOpts};
-use super::filters::{analyze, collapse_repeats, normalize_peak, should_drop_segment, should_transcribe};
+use super::filters::{
+    analyze, collapse_repeats, normalize_peak, should_drop_segment, should_transcribe,
+};
 use super::vad::{detect_file, SpeechDetector};
 use crate::audio::prepare::{prepare_audio_with, STT_RATE};
 use crate::audio::wav::PcmFile;

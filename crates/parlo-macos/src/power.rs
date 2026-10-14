@@ -22,7 +22,8 @@ impl Drop for ActivityToken {
 impl PowerGuard for MacPowerGuard {
     fn begin(&self, reason: &str) -> Box<dyn Any + Send> {
         let opts = NSActivityOptions::UserInitiated | NSActivityOptions::IdleSystemSleepDisabled;
-        let token = unsafe { NSProcessInfo::processInfo().beginActivityWithOptions_reason(opts, &NSString::from_str(reason)) };
+        let token = NSProcessInfo::processInfo()
+            .beginActivityWithOptions_reason(opts, &NSString::from_str(reason));
         Box::new(ActivityToken(token))
     }
 }

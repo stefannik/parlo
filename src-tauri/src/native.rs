@@ -53,7 +53,13 @@ pub fn open_privacy_settings(kind: &str) -> Result<(), String> {
             "microphone" => "Privacy_Microphone",
             _ => "Privacy",
         };
-        std::process::Command::new("open").arg(format!("x-apple.systempreferences:com.apple.preference.security?{pane}")).status().map(|_| ()).map_err(|e| e.to_string())
+        std::process::Command::new("open")
+            .arg(format!(
+                "x-apple.systempreferences:com.apple.preference.security?{pane}"
+            ))
+            .status()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -64,7 +70,9 @@ pub fn open_privacy_settings(kind: &str) -> Result<(), String> {
 
 /// CPU threads for whisper (BRIEF §10 "Good-citizen compute"): Balanced ≈ half the cores, Maximum = all.
 pub fn stt_threads(s: &Settings) -> usize {
-    let n = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+    let n = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
     match s.performance {
         Performance::Maximum => n,
         Performance::Balanced => (n / 2).max(2),

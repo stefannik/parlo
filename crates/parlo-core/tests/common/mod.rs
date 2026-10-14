@@ -41,6 +41,13 @@ pub fn peak_rss_mb() -> f64 {
 
 /// Current resident set size in MB (portable via `ps`).
 pub fn current_rss_mb() -> f64 {
-    let out = std::process::Command::new("ps").args(["-o", "rss=", "-p", &std::process::id().to_string()]).output().expect("ps");
-    String::from_utf8_lossy(&out.stdout).trim().parse::<f64>().unwrap_or(0.0) / 1024.0
+    let out = std::process::Command::new("ps")
+        .args(["-o", "rss=", "-p", &std::process::id().to_string()])
+        .output()
+        .expect("ps");
+    String::from_utf8_lossy(&out.stdout)
+        .trim()
+        .parse::<f64>()
+        .unwrap_or(0.0)
+        / 1024.0
 }

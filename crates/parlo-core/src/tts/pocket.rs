@@ -18,7 +18,9 @@ use std::sync::mpsc::sync_channel;
 
 pub const WEIGHTS_REV: &str = "d29db7978e464fb90cb3359ee0c69a273b9142cc";
 pub const VOICES_REV: &str = "e041936c75475d350b405bc870bcf7c22da4e9e6";
-pub const VOICE_IDS: [&str; 10] = ["alba", "anna", "charles", "cosette", "george", "jane", "mary", "michael", "paul", "vera"];
+pub const VOICE_IDS: [&str; 10] = [
+    "alba", "anna", "charles", "cosette", "george", "jane", "mary", "michael", "paul", "vera",
+];
 const TEMPERATURE: f32 = 0.7;
 const EOS_THRESHOLD: f32 = -4.0;
 const MAX_TOKENS_PER_CHUNK: usize = 50;
@@ -30,8 +32,19 @@ fn yaml_quote(p: &std::path::Path) -> String {
 
 /// Voices present on disk, without loading the model (the UI lists them at startup; previews play without the engine).
 pub fn discover_voices(models: &ModelPaths) -> Vec<VoiceInfo> {
-    let dir = models.pockettts().join("hf/hub/models--kyutai--pocket-tts-without-voice-cloning/snapshots").join(VOICES_REV).join("languages/english/embeddings");
-    VOICE_IDS.iter().filter(|v| dir.join(format!("{v}.safetensors")).exists()).map(|v| VoiceInfo { id: (*v).into(), label: v[..1].to_uppercase() + &v[1..] }).collect()
+    let dir = models
+        .pockettts()
+        .join("hf/hub/models--kyutai--pocket-tts-without-voice-cloning/snapshots")
+        .join(VOICES_REV)
+        .join("languages/english/embeddings");
+    VOICE_IDS
+        .iter()
+        .filter(|v| dir.join(format!("{v}.safetensors")).exists())
+        .map(|v| VoiceInfo {
+            id: (*v).into(),
+            label: v[..1].to_uppercase() + &v[1..],
+        })
+        .collect()
 }
 
 pub struct PocketEngine {
@@ -48,7 +61,9 @@ fn cerr(e: impl std::fmt::Display) -> Error {
 
 impl PocketEngine {
     pub fn load(models: &ModelPaths) -> Result<Self> {
-        let snap = models.pockettts().join("hf/hub/models--kyutai--pocket-tts-without-voice-cloning/snapshots");
+        let snap = models
+            .pockettts()
+            .join("hf/hub/models--kyutai--pocket-tts-without-voice-cloning/snapshots");
         let w = snap.join(WEIGHTS_REV).join("languages/english");
         let weights = w.join("model.safetensors");
         let tokenizer = w.join("tokenizer.model");
@@ -61,18 +76,43 @@ impl PocketEngine {
         let available: Vec<VoiceInfo> = VOICE_IDS
             .iter()
             .filter(|v| voices_dir.join(format!("{v}.safetensors")).exists())
-            .map(|v| VoiceInfo { id: (*v).into(), label: v[..1].to_uppercase() + &v[1..] })
+            .map(|v| VoiceInfo {
+                id: (*v).into(),
+                label: v[..1].to_uppercase() + &v[1..],
+            })
             .collect();
         if available.len() < VOICE_IDS.len() {
-            tracing::warn!("{} of {} voices are missing on disk and are hidden", VOICE_IDS.len() - available.len(), VOICE_IDS.len());
+            tracing::warn!(
+                "{} of {} voices are missing on disk and are hidden",
+                VOICE_IDS.len() - available.len(),
+                VOICE_IDS.len()
+            );
         }
         if available.is_empty() {
-            return Err(Error::Other("No voices found. Run scripts/fetch-models.sh --only pockettts.".into()));
+            return Err(Error::Other(
+                "No voices found. Run scripts/fetch-models.sh --only pockettts.".into(),
+            ));
         }
-        let yaml = TEMPLATE.replace("@@MODEL@@", &yaml_quote(&weights)).replace("@@TOKENIZER@@", &yaml_quote(&tokenizer));
+        let yaml = TEMPLATE
+            .replace("@@MODEL@@", &yaml_quote(&weights))
+            .replace("@@TOKENIZER@@", &yaml_quote(&tokenizer));
         let device = Self::device();
-        let model = TTSModel::load_from_yaml_str(&yaml, TEMPERATURE, Quality::Standard.lsd_decode_steps(), EOS_THRESHOLD, None, &device).map_err(cerr)?;
-        Ok(Self { model, voices_dir, cache: HashMap::new(), available, revision: format!("{}+{}", &WEIGHTS_REV[..8], &VOICES_REV[..8]) })
+        let model = TTSModel::load_from_yaml_str(
+            &yaml,
+            TEMPERATURE,
+            Quality::Standard.lsd_decode_steps(),
+            EOS_THRESHOLD,
+            None,
+            &device,
+        )
+        .map_err(cerr)?;
+        Ok(Self {
+            model,
+            voices_dir,
+            cache: HashMap::new(),
+            available,
+            revision: format!("{}+{}", &WEIGHTS_REV[..8], &VOICES_REV[..8]),
+        })
     }
 
     #[cfg(feature = "tts-metal")]
@@ -87,9 +127,16 @@ impl PocketEngine {
     fn voice_state(&mut self, voice: &str) -> Result<ModelState> {
         if !self.cache.contains_key(voice) {
             if !self.available.iter().any(|v| v.id == voice) {
-                return Err(Error::Other(format!("The voice '{voice}' is not available.")));
+                return Err(Error::Other(format!(
+                    "The voice '{voice}' is not available."
+                )));
             }
-            let st = load_kv_voice_state(self.voices_dir.join(format!("{voice}.safetensors")), "flow_lm.", &self.model.device).map_err(cerr)?;
+            let st = load_kv_voice_state(
+                self.voices_dir.join(format!("{voice}.safetensors")),
+                "flow_lm.",
+                &self.model.device,
+            )
+            .map_err(cerr)?;
             self.cache.insert(voice.to_string(), st);
         }
         Ok(self.cache[voice].clone())
@@ -110,12 +157,21 @@ impl TtsEngine for PocketEngine {
         self.available.clone()
     }
 
-    fn synthesize(&mut self, text: &str, voice: &str, quality: Quality, sink: &mut dyn FnMut(&[f32]) -> Result<()>, abort: &AtomicBool) -> Result<()> {
+    fn synthesize(
+        &mut self,
+        text: &str,
+        voice: &str,
+        quality: Quality,
+        sink: &mut dyn FnMut(&[f32]) -> Result<()>,
+        abort: &AtomicBool,
+    ) -> Result<()> {
         let state = self.voice_state(voice)?;
         let text = text.split_whitespace().collect::<Vec<_>>().join(" "); // ctric: whitespace-normalized
         let mut model = self.model.clone(); // cheap (Arc-backed tensors)
         model.lsd_decode_steps = quality.lsd_decode_steps();
-        let chunks = model.split_chunks_py(&text, MAX_TOKENS_PER_CHUNK).map_err(cerr)?;
+        let chunks = model
+            .split_chunks_py(&text, MAX_TOKENS_PER_CHUNK)
+            .map_err(cerr)?;
         for chunk in chunks {
             if abort.load(Ordering::Relaxed) {
                 return Err(Error::Cancelled);
@@ -126,7 +182,9 @@ impl TtsEngine for PocketEngine {
                 let st = &state;
                 s.spawn(move || {
                     for q in m.generate_latents_segment(chunk, st) {
-                        if abort.load(Ordering::Relaxed) || tx.send(q.map_err(|e| e.to_string())).is_err() {
+                        if abort.load(Ordering::Relaxed)
+                            || tx.send(q.map_err(|e| e.to_string())).is_err()
+                        {
                             return;
                         }
                     }
@@ -140,7 +198,12 @@ impl TtsEngine for PocketEngine {
                     let q = q.map_err(cerr)?;
                     let audio = dec.decode(&q).map_err(cerr)?;
                     buf.clear();
-                    buf.extend(audio.flatten_all().and_then(|t| t.to_vec1::<f32>()).map_err(cerr)?);
+                    buf.extend(
+                        audio
+                            .flatten_all()
+                            .and_then(|t| t.to_vec1::<f32>())
+                            .map_err(cerr)?,
+                    );
                     sink(&buf)?;
                 }
                 if abort.load(Ordering::Relaxed) {

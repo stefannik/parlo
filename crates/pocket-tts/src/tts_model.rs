@@ -146,7 +146,14 @@ impl TTSModel {
         device: &Device,
     ) -> Result<Self> {
         let config: Config = serde_yaml::from_str(yaml)?;
-        Self::from_config(config, temp, lsd_decode_steps, eos_threshold, noise_clamp, device)
+        Self::from_config(
+            config,
+            temp,
+            lsd_decode_steps,
+            eos_threshold,
+            noise_clamp,
+            device,
+        )
     }
 
     /// Load model with quantized weights for reduced memory footprint
@@ -654,8 +661,18 @@ impl TTSModel {
         let (prepared, _) = prepare_text_prompt_py(text);
         let prepared = prepared.trim().to_string();
         let tokens = self.conditioner.encode_ids(&prepared)?;
-        let eos_ids: Vec<u32> = self.conditioner.encode_ids(".!...?")?.into_iter().skip(1).collect();
-        let fallback_ids: Vec<u32> = self.conditioner.encode_ids(",;:")?.into_iter().skip(1).collect();
+        let eos_ids: Vec<u32> = self
+            .conditioner
+            .encode_ids(".!...?")?
+            .into_iter()
+            .skip(1)
+            .collect();
+        let fallback_ids: Vec<u32> = self
+            .conditioner
+            .encode_ids(",;:")?
+            .into_iter()
+            .skip(1)
+            .collect();
         let segments = |toks: &[u32], bounds: &[usize]| -> Result<Vec<(usize, String)>> {
             let mut v = Vec::new();
             for w in bounds.windows(2) {
@@ -1313,7 +1330,11 @@ fn prepare_text_prompt(text: &str) -> String {
 pub fn prepare_text_prompt_py(text: &str) -> (String, usize) {
     let mut text = text.trim().to_string();
     text = text.replace(['\n', '\r'], " ").replace("  ", " ");
-    let frames_after_eos_guess = if text.split_whitespace().count() <= 4 { 3 } else { 1 };
+    let frames_after_eos_guess = if text.split_whitespace().count() <= 4 {
+        3
+    } else {
+        1
+    };
     if let Some(first) = text.chars().next()
         && !first.is_uppercase()
     {

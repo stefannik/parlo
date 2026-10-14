@@ -51,7 +51,14 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::diagnostics_text,
             commands::quit_confirmed,
         ])
-        .events(collect_events![RecorderStateEvent, RecorderWarningEvent, ModelsStateEvent, JobChangedEvent, MenuActionEvent, QuitRequestedEvent])
+        .events(collect_events![
+            RecorderStateEvent,
+            RecorderWarningEvent,
+            ModelsStateEvent,
+            JobChangedEvent,
+            MenuActionEvent,
+            QuitRequestedEvent
+        ])
 }
 
 pub const BINDINGS_PATH: &str = "../ui/src/bindings.ts";
@@ -65,10 +72,17 @@ pub fn ensure_main_window(app: &AppHandle) {
         return;
     }
     #[allow(unused_mut)]
-    let mut b = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into())).title("Parlo").inner_size(960.0, 700.0).min_inner_size(720.0, 560.0).resizable(true).center();
+    let mut b = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+        .title("Parlo")
+        .inner_size(960.0, 700.0)
+        .min_inner_size(720.0, 560.0)
+        .resizable(true)
+        .center();
     #[cfg(target_os = "macos")]
     {
-        b = b.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true);
+        b = b
+            .title_bar_style(tauri::TitleBarStyle::Overlay)
+            .hidden_title(true);
     }
     match b.build() {
         Ok(w) => {
@@ -79,7 +93,8 @@ pub fn ensure_main_window(app: &AppHandle) {
 }
 
 fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
-    let item = |id: &str, label: &str, accel: Option<&str>| MenuItem::with_id(app, id, label, true, accel);
+    let item =
+        |id: &str, label: &str, accel: Option<&str>| MenuItem::with_id(app, id, label, true, accel);
     let app_menu = Submenu::with_items(
         app,
         "Parlo",
@@ -107,7 +122,11 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             &item("pause", "Pause / Resume Recording", Some("CmdOrCtrl+P"))?,
             &PredefinedMenuItem::separator(app)?,
             &item("export", "Export…", Some("CmdOrCtrl+E"))?,
-            &item("copy_transcript", "Copy Transcript", Some("CmdOrCtrl+Shift+C"))?,
+            &item(
+                "copy_transcript",
+                "Copy Transcript",
+                Some("CmdOrCtrl+Shift+C"),
+            )?,
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::close_window(app, None)?,
         ],
@@ -130,17 +149,44 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         app,
         "View",
         true,
-        &[&item("tab_transcribe", "Transcribe", Some("CmdOrCtrl+1"))?, &item("tab_speak", "Speak", Some("CmdOrCtrl+2"))?, &PredefinedMenuItem::separator(app)?, &PredefinedMenuItem::fullscreen(app, None)?],
+        &[
+            &item("tab_transcribe", "Transcribe", Some("CmdOrCtrl+1"))?,
+            &item("tab_speak", "Speak", Some("CmdOrCtrl+2"))?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::fullscreen(app, None)?,
+        ],
     )?;
-    let window = Submenu::with_items(app, "Window", true, &[&PredefinedMenuItem::minimize(app, None)?, &PredefinedMenuItem::maximize(app, None)?])?;
-    let help = Submenu::with_items(app, "Help", true, &[&item("generate", "Generate Speech", Some("CmdOrCtrl+Enter"))?])?;
+    let window = Submenu::with_items(
+        app,
+        "Window",
+        true,
+        &[
+            &PredefinedMenuItem::minimize(app, None)?,
+            &PredefinedMenuItem::maximize(app, None)?,
+        ],
+    )?;
+    let help = Submenu::with_items(
+        app,
+        "Help",
+        true,
+        &[&item(
+            "generate",
+            "Generate Speech",
+            Some("CmdOrCtrl+Enter"),
+        )?],
+    )?;
     Menu::with_items(app, &[&app_menu, &file, &edit, &view, &window, &help])
 }
 
 /// Quit while recording asks first (BRIEF §8.2); otherwise quit right away.
 fn request_quit(app: &AppHandle) {
     let state = app.state::<Arc<AppState>>();
-    let recording = state.recorder.lock().unwrap().as_ref().is_some_and(|h| h.snapshot().state != parlo_core::recorder::RecorderState::Stopped);
+    let recording = state
+        .recorder
+        .lock()
+        .unwrap()
+        .as_ref()
+        .is_some_and(|h| h.snapshot().state != parlo_core::recorder::RecorderState::Stopped);
     let job_running = state.jobs.any_running();
     if !recording {
         state.quitting.store(true, Ordering::SeqCst);
@@ -148,7 +194,11 @@ fn request_quit(app: &AppHandle) {
         return;
     }
     if app.get_webview_window("main").is_some() {
-        let _ = QuitRequestedEvent { recording, job_running }.emit(app);
+        let _ = QuitRequestedEvent {
+            recording,
+            job_running,
+        }
+        .emit(app);
         return;
     }
     // no window: native confirmation
@@ -157,7 +207,10 @@ fn request_quit(app: &AppHandle) {
     app.dialog()
         .message("A recording is in progress. Stop and save it before quitting?")
         .title("Parlo")
-        .buttons(MessageDialogButtons::OkCancelCustom("Stop and save".into(), "Cancel".into()))
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "Stop and save".into(),
+            "Cancel".into(),
+        ))
         .show(move |stop| {
             if stop {
                 let state = app2.state::<Arc<AppState>>();
@@ -213,11 +266,20 @@ pub fn run() {
             let models = parlo_core::paths::ModelPaths::discover();
             // local rotating logs (5 × 2 MB), never uploaded
             let log = parlo_core::logging::RotatingFile::standard(&paths.logs);
-            let _ = tracing_subscriber::fmt().with_writer(move || log.handle()).with_ansi(false).with_max_level(tracing::Level::INFO).try_init();
+            let _ = tracing_subscriber::fmt()
+                .with_writer(move || log.handle())
+                .with_ansi(false)
+                .with_max_level(tracing::Level::INFO)
+                .try_init();
             let state = AppState::new(&handle, paths.clone(), models);
             // retention / cache policy at launch (never touches untranscribed recordings or the current output)
-            let (settings, ws) = (state.settings.lock().unwrap().clone(), state.workspace.lock().unwrap().clone());
-            if let Err(e) = parlo_core::store::cleanup(&paths, &settings, &ws, std::time::SystemTime::now()) {
+            let (settings, ws) = (
+                state.settings.lock().unwrap().clone(),
+                state.workspace.lock().unwrap().clone(),
+            );
+            if let Err(e) =
+                parlo_core::store::cleanup(&paths, &settings, &ws, std::time::SystemTime::now())
+            {
                 tracing::warn!("cleanup failed: {e}");
             }
             app.manage(state.clone());
@@ -258,7 +320,10 @@ pub fn run() {
             }
         }
         #[cfg(target_os = "macos")]
-        RunEvent::Reopen { has_visible_windows, .. } => {
+        RunEvent::Reopen {
+            has_visible_windows,
+            ..
+        } => {
             if !has_visible_windows {
                 ensure_main_window(app);
             }
@@ -273,7 +338,10 @@ mod tests {
     #[test]
     fn export_bindings() {
         super::specta_builder()
-            .export(specta_typescript::Typescript::default(), super::BINDINGS_PATH)
+            .export(
+                specta_typescript::Typescript::default(),
+                super::BINDINGS_PATH,
+            )
             .expect("export bindings");
     }
 }

@@ -62,12 +62,38 @@ const K_AUDIO_FILE_FLAGS_ERASE_FILE: u32 = 1;
 
 #[link(name = "AudioToolbox", kind = "framework")]
 unsafe extern "C" {
-    fn ExtAudioFileCreateWithURL(url: CFURLRef, file_type: u32, desc: *const AudioStreamBasicDescription, layout: *const c_void, flags: u32, out: *mut ExtAudioFileRef) -> OSStatus;
-    fn ExtAudioFileSetProperty(file: ExtAudioFileRef, property: u32, size: u32, data: *const c_void) -> OSStatus;
-    fn ExtAudioFileGetProperty(file: ExtAudioFileRef, property: u32, size: *mut u32, data: *mut c_void) -> OSStatus;
-    fn ExtAudioFileWrite(file: ExtAudioFileRef, frames: u32, data: *const AudioBufferList) -> OSStatus;
+    fn ExtAudioFileCreateWithURL(
+        url: CFURLRef,
+        file_type: u32,
+        desc: *const AudioStreamBasicDescription,
+        layout: *const c_void,
+        flags: u32,
+        out: *mut ExtAudioFileRef,
+    ) -> OSStatus;
+    fn ExtAudioFileSetProperty(
+        file: ExtAudioFileRef,
+        property: u32,
+        size: u32,
+        data: *const c_void,
+    ) -> OSStatus;
+    fn ExtAudioFileGetProperty(
+        file: ExtAudioFileRef,
+        property: u32,
+        size: *mut u32,
+        data: *mut c_void,
+    ) -> OSStatus;
+    fn ExtAudioFileWrite(
+        file: ExtAudioFileRef,
+        frames: u32,
+        data: *const AudioBufferList,
+    ) -> OSStatus;
     fn ExtAudioFileDispose(file: ExtAudioFileRef) -> OSStatus;
-    fn AudioConverterSetProperty(conv: AudioConverterRef, property: u32, size: u32, data: *const c_void) -> OSStatus;
+    fn AudioConverterSetProperty(
+        conv: AudioConverterRef,
+        property: u32,
+        size: u32,
+        data: *const c_void,
+    ) -> OSStatus;
 }
 
 struct FileGuard(ExtAudioFileRef);
@@ -94,7 +120,9 @@ fn check(what: &str, status: OSStatus) -> Result<()> {
     if status == 0 {
         Ok(())
     } else {
-        Err(Error::Other(format!("AudioToolbox {what} failed (OSStatus {status})")))
+        Err(Error::Other(format!(
+            "AudioToolbox {what} failed (OSStatus {status})"
+        )))
     }
 }
 
@@ -108,10 +136,16 @@ impl AacEncoder for AudioToolboxAac {
     fn encode_wav_to_m4a(&self, wav: &Path, dest: &Path, bitrate_kbps: u32) -> Result<()> {
         let pcm = PcmFile::open(wav)?;
         let rate = pcm.sample_rate as f64;
-        let url = CFURL::from_path(dest, false).ok_or_else(|| Error::Other("invalid M4A destination path".into()))?;
+        let url = CFURL::from_path(dest, false)
+            .ok_or_else(|| Error::Other("invalid M4A destination path".into()))?;
 
         // destination: AAC, mono
-        let dst = AudioStreamBasicDescription { sample_rate: rate, format_id: K_AUDIO_FORMAT_MPEG4_AAC, channels_per_frame: 1, ..Default::default() };
+        let dst = AudioStreamBasicDescription {
+            sample_rate: rate,
+            format_id: K_AUDIO_FORMAT_MPEG4_AAC,
+            channels_per_frame: 1,
+            ..Default::default()
+        };
         // client (what we feed in): 16-bit signed mono PCM
         let client = AudioStreamBasicDescription {
             sample_rate: rate,
@@ -126,21 +160,56 @@ impl AacEncoder for AudioToolboxAac {
         };
 
         let mut file: ExtAudioFileRef = ptr::null_mut();
-        check("ExtAudioFileCreateWithURL", unsafe { ExtAudioFileCreateWithURL(url.as_concrete_TypeRef(), K_AUDIO_FILE_M4A_TYPE, &dst, ptr::null(), K_AUDIO_FILE_FLAGS_ERASE_FILE, &mut file) })?;
+        check("ExtAudioFileCreateWithURL", unsafe {
+            ExtAudioFileCreateWithURL(
+                url.as_concrete_TypeRef(),
+                K_AUDIO_FILE_M4A_TYPE,
+                &dst,
+                ptr::null(),
+                K_AUDIO_FILE_FLAGS_ERASE_FILE,
+                &mut file,
+            )
+        })?;
         let guard = FileGuard(file);
         check("set client format", unsafe {
-            ExtAudioFileSetProperty(file, K_EXT_AUDIO_FILE_PROPERTY_CLIENT_DATA_FORMAT, std::mem::size_of::<AudioStreamBasicDescription>() as u32, &client as *const _ as *const c_void)
+            ExtAudioFileSetProperty(
+                file,
+                K_EXT_AUDIO_FILE_PROPERTY_CLIENT_DATA_FORMAT,
+                std::mem::size_of::<AudioStreamBasicDescription>() as u32,
+                &client as *const _ as *const c_void,
+            )
         })?;
 
         // bit rate: set on the file's converter, then re-apply the (null) converter config so the change takes effect
         let mut conv: AudioConverterRef = ptr::null_mut();
         let mut sz = std::mem::size_of::<AudioConverterRef>() as u32;
-        check("get converter", unsafe { ExtAudioFileGetProperty(file, K_EXT_AUDIO_FILE_PROPERTY_AUDIO_CONVERTER, &mut sz, &mut conv as *mut _ as *mut c_void) })?;
+        check("get converter", unsafe {
+            ExtAudioFileGetProperty(
+                file,
+                K_EXT_AUDIO_FILE_PROPERTY_AUDIO_CONVERTER,
+                &mut sz,
+                &mut conv as *mut _ as *mut c_void,
+            )
+        })?;
         let bps: u32 = bitrate_kbps * 1000;
-        check("set bit rate", unsafe { AudioConverterSetProperty(conv, K_AUDIO_CONVERTER_ENCODE_BIT_RATE, 4, &bps as *const u32 as *const c_void) })?;
+        check("set bit rate", unsafe {
+            AudioConverterSetProperty(
+                conv,
+                K_AUDIO_CONVERTER_ENCODE_BIT_RATE,
+                4,
+                &bps as *const u32 as *const c_void,
+            )
+        })?;
         let null_cfg: *const c_void = ptr::null();
         // (best effort: some OS versions reject a null config; the bit rate is already set on the converter)
-        let _ = unsafe { ExtAudioFileSetProperty(file, K_EXT_AUDIO_FILE_PROPERTY_CONVERTER_CONFIG, std::mem::size_of::<*const c_void>() as u32, &null_cfg as *const _ as *const c_void) };
+        let _ = unsafe {
+            ExtAudioFileSetProperty(
+                file,
+                K_EXT_AUDIO_FILE_PROPERTY_CONVERTER_CONFIG,
+                std::mem::size_of::<*const c_void>() as u32,
+                &null_cfg as *const _ as *const c_void,
+            )
+        };
 
         const BLOCK: usize = 4096;
         let mut f32buf = Vec::new();
@@ -150,9 +219,22 @@ impl AacEncoder for AudioToolboxAac {
             let n = BLOCK.min((pcm.frames - pos) as usize);
             pcm.read_f32(pos, n, &mut f32buf)?;
             i16buf.clear();
-            i16buf.extend(f32buf.iter().map(|s| (s.clamp(-1.0, 1.0) * 32767.0).round() as i16));
-            let list = AudioBufferList { number_buffers: 1, buffers: [AudioBuffer { number_channels: 1, data_byte_size: (i16buf.len() * 2) as u32, data: i16buf.as_mut_ptr() as *mut c_void }] };
-            check("ExtAudioFileWrite", unsafe { ExtAudioFileWrite(file, i16buf.len() as u32, &list) })?;
+            i16buf.extend(
+                f32buf
+                    .iter()
+                    .map(|s| (s.clamp(-1.0, 1.0) * 32767.0).round() as i16),
+            );
+            let list = AudioBufferList {
+                number_buffers: 1,
+                buffers: [AudioBuffer {
+                    number_channels: 1,
+                    data_byte_size: (i16buf.len() * 2) as u32,
+                    data: i16buf.as_mut_ptr() as *mut c_void,
+                }],
+            };
+            check("ExtAudioFileWrite", unsafe {
+                ExtAudioFileWrite(file, i16buf.len() as u32, &list)
+            })?;
             pos += n as u64;
         }
         check("ExtAudioFileDispose", guard.finish())

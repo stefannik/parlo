@@ -36,7 +36,11 @@ pub struct Analysis {
 
 pub fn analyze(samples: &[f32]) -> Analysis {
     if samples.is_empty() {
-        return Analysis { rms: 0.0, peak: 0.0, voiced_ratio: 0.0 };
+        return Analysis {
+            rms: 0.0,
+            peak: 0.0,
+            voiced_ratio: 0.0,
+        };
     }
     let (mut sq, mut peak) = (0f64, 0f32);
     for s in samples {
@@ -45,7 +49,11 @@ pub fn analyze(samples: &[f32]) -> Analysis {
     }
     let thr = (peak * VOICED_RELATIVE).max(VOICED_FLOOR);
     let voiced = samples.iter().filter(|s| s.abs() >= thr).count();
-    Analysis { rms: (sq / samples.len() as f64).sqrt() as f32, peak, voiced_ratio: voiced as f32 / samples.len() as f32 }
+    Analysis {
+        rms: (sq / samples.len() as f64).sqrt() as f32,
+        peak,
+        voiced_ratio: voiced as f32 / samples.len() as f32,
+    }
 }
 
 /// Peak-normalize a chunk so quiet recordings reach the model at a sensible level. Returns the gain applied
@@ -214,17 +222,32 @@ mod tests {
     #[test]
     fn energy_gate_rejects_near_silence_but_accepts_quiet_speech() {
         assert!(!should_transcribe(&analyze(&vec![0.0; 16_000])));
-        assert!(!should_transcribe(&analyze(&vec![0.001; 16_000])), "constant hiss at −60 dBFS");
-        let speechy: Vec<f32> = (0..16_000).map(|i| ((i as f32) * 0.05).sin() * 0.2).collect();
+        assert!(
+            !should_transcribe(&analyze(&vec![0.001; 16_000])),
+            "constant hiss at −60 dBFS"
+        );
+        let speechy: Vec<f32> = (0..16_000)
+            .map(|i| ((i as f32) * 0.05).sin() * 0.2)
+            .collect();
         assert!(should_transcribe(&analyze(&speechy)));
         // a quiet recording (peak 0.006, i.e. −44 dBFS) with speech-like bursts must pass the gate
-        let quiet: Vec<f32> = (0..16_000).map(|i| if (i / 3000) % 2 == 0 { ((i as f32) * 0.05).sin() * 0.006 } else { ((i as f32) * 0.05).sin() * 0.0004 }).collect();
+        let quiet: Vec<f32> = (0..16_000)
+            .map(|i| {
+                if (i / 3000) % 2 == 0 {
+                    ((i as f32) * 0.05).sin() * 0.006
+                } else {
+                    ((i as f32) * 0.05).sin() * 0.0004
+                }
+            })
+            .collect();
         assert!(should_transcribe(&analyze(&quiet)), "{:?}", analyze(&quiet));
     }
 
     #[test]
     fn normalize_boosts_quiet_audio_only() {
-        let mut quiet: Vec<f32> = (0..1000).map(|i| ((i as f32) * 0.1).sin() * 0.005).collect();
+        let mut quiet: Vec<f32> = (0..1000)
+            .map(|i| ((i as f32) * 0.1).sin() * 0.005)
+            .collect();
         let g = normalize_peak(&mut quiet);
         assert!((g - 100.0).abs() < 1.0, "gain {g} capped at +40 dB");
         let mut mid: Vec<f32> = (0..1000).map(|i| ((i as f32) * 0.1).sin() * 0.05).collect();
@@ -233,18 +256,31 @@ mod tests {
         let mut loud = vec![0.9f32; 100];
         assert_eq!(normalize_peak(&mut loud), 1.0);
         let mut hiss = vec![0.0008f32; 100];
-        assert_eq!(normalize_peak(&mut hiss), 1.0, "digital-silence-level noise is never boosted");
+        assert_eq!(
+            normalize_peak(&mut hiss),
+            1.0,
+            "digital-silence-level noise is never boosted"
+        );
     }
 
     #[test]
     fn vad_leveling_lifts_quiet_blocks_and_never_amplifies_loud_ones() {
         // 4 s loud (0.6) then 4 s quiet (0.01): the quiet blocks end up at the target peak, the loud ones untouched
-        let mut x: Vec<f32> = (0..8 * 1000).map(|i| ((i as f32) * 0.2).sin() * if i < 4000 { 0.6 } else { 0.01 }).collect();
+        let mut x: Vec<f32> = (0..8 * 1000)
+            .map(|i| ((i as f32) * 0.2).sin() * if i < 4000 { 0.6 } else { 0.01 })
+            .collect();
         level_for_vad(&mut x, 1000);
         let peak = |r: std::ops::Range<usize>| x[r].iter().fold(0f32, |m, s| m.max(s.abs()));
         assert!((peak(0..4000) - 0.6).abs() < 0.02, "loud part untouched");
-        assert!((peak(4000..8000) - 0.5).abs() < 0.02, "quiet part lifted to ≈ 0.5, got {}", peak(4000..8000));
-        assert!(x.iter().all(|s| s.abs() <= 0.61), "no sample is ever amplified beyond the target/its original peak");
+        assert!(
+            (peak(4000..8000) - 0.5).abs() < 0.02,
+            "quiet part lifted to ≈ 0.5, got {}",
+            peak(4000..8000)
+        );
+        assert!(
+            x.iter().all(|s| s.abs() <= 0.61),
+            "no sample is ever amplified beyond the target/its original peak"
+        );
     }
 
     #[test]
