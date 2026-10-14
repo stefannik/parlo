@@ -15,3 +15,6 @@ spike/**/.cache/
 ui/dist
 src-tauri/gen
 __pycache__/
+spike/**/target/
+spike/**/Cargo.lock.bak
+spike/tts-parity/logs/

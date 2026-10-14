@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["crates/parlo-core", "crates/parlo-cli"]
+exclude = ["spike"]
 # src-tauri joins the workspace in Phase 4.
 
 [workspace.package]
