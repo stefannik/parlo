@@ -29,9 +29,12 @@ _(nothing blocking so far. All needed domains are reachable: HF (incl. LFS/xethu
 | Candle port (patched) warm RTF, pipelined decode | ≈ 1.0 | 2026-10-14 |
 
 ## Known issues
-- Whisper large-v3-turbo on 4 vCPU ≈ 36 s per 30 s window (RTF ≈ 1.2 even on full windows, ≈ 8 on short clips) → bulk TTS WER uses `small` (see DECISIONS).
+- Cloud VM is 4 vCPU shared by background benchmarks: absolute timings in this file are contended unless marked "quiet"; only relative numbers are meaningful. Whisper large-v3-turbo ≈ 36 s per 30 s window here.
+- `cargo test` full workspace takes ≈ 25 min on this VM (real engines): `stt_pipeline` 2 h run, `stt_real`, `stt_fleurs`, `tts_pocket`.
+- The Linux app has no overlay title bar / traffic lights (macOS-only styling) and no microphone devices; recording is verified through `FileSource` in `parlo-core` only.
+- Disk: the cloud allowance is small; `[profile.dev] debug = "line-tables-only"` keeps `target/` manageable. Don't run `cargo test` with `CARGO_INCREMENTAL=1` (adds ~4 GB).
 
 ## Next steps
-1. Finish TTS parity run → metrics → decision (DECISIONS C-00x), report + listen.html.
-2. STT selection bench (FLEURS + synthetic + edge) → `spike/stt-bench/report.md`.
-3. Phase 2 (STT pipeline), then Phases 3–5.
+1. Finish TTS parity (ASR → `metrics.py score` → `report.md`, `listen.html`, decision in DECISIONS) and the STT bench (q5_0, f16, small → `report.md`, final default).
+2. Cloud report (below) and handoff polish.
+3. Mac session: `docs/MAC_HANDOFF.md` top to bottom.
