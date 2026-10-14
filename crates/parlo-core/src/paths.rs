@@ -19,7 +19,9 @@ impl AppPaths {
             return Self::under(home);
         }
         if cfg!(target_os = "macos") {
-            let h = directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf()).unwrap_or_else(|| PathBuf::from("."));
+            let h = directories::BaseDirs::new()
+                .map(|b| b.home_dir().to_path_buf())
+                .unwrap_or_else(|| PathBuf::from("."));
             return Self {
                 data: h.join("Library/Application Support/Parlo"),
                 cache: h.join("Library/Caches/Parlo"),
@@ -38,7 +40,11 @@ impl AppPaths {
 
     pub fn under(root: impl AsRef<Path>) -> Self {
         let r = root.as_ref();
-        Self { data: r.join("data"), cache: r.join("cache"), logs: r.join("logs") }
+        Self {
+            data: r.join("data"),
+            cache: r.join("cache"),
+            logs: r.join("logs"),
+        }
     }
 
     pub fn recordings(&self) -> PathBuf {
@@ -70,7 +76,8 @@ pub fn free_disk_bytes(path: &Path) -> std::io::Result<u64> {
             None => break,
         }
     }
-    let c = std::ffi::CString::new(p.as_os_str().to_string_lossy().as_bytes()).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+    let c = std::ffi::CString::new(p.as_os_str().to_string_lossy().as_bytes())
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
     let mut st: libc::statvfs = unsafe { std::mem::zeroed() };
     let rc = unsafe { libc::statvfs(c.as_ptr(), &mut st) };
     if rc != 0 {

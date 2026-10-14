@@ -26,7 +26,10 @@ pub enum Error {
     #[error(transparent)]
     Decode(#[from] DecodeError),
     #[error("I/O error on {path}: {source}")]
-    Io { path: PathBuf, source: std::io::Error },
+    Io {
+        path: PathBuf,
+        source: std::io::Error,
+    },
     #[error("I/O error: {0}")]
     IoBare(#[from] std::io::Error),
     #[error("Audio device error: {0}")]
@@ -47,7 +50,10 @@ pub enum Error {
 
 impl Error {
     pub fn io(path: impl Into<PathBuf>, source: std::io::Error) -> Self {
-        Error::Io { path: path.into(), source }
+        Error::Io {
+            path: path.into(),
+            source,
+        }
     }
 }
 

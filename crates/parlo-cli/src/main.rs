@@ -5,7 +5,11 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 #[derive(Parser)]
-#[command(name = "parlo-cli", version, about = "Headless Parlo: decode, record, transcribe, speak")]
+#[command(
+    name = "parlo-cli",
+    version,
+    about = "Headless Parlo: decode, record, transcribe, speak"
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
@@ -15,6 +19,29 @@ struct Cli {
 enum Cmd {
     /// Decode any supported audio/video file to 16 kHz mono PCM16 WAV (what the STT pipeline consumes)
     Decode { input: PathBuf, output: PathBuf },
+    /// Record from the microphone (or a fake source for tests) into DIR; Ctrl-C / SIGTERM stops gracefully.
+    Record {
+        #[arg(long)]
+        dir: PathBuf,
+        /// mic | counter | sine | wav:<path>
+        #[arg(long, default_value = "mic")]
+        source: String,
+        #[arg(long, default_value_t = 48_000)]
+        rate: u32,
+        /// accelerate fake sources (no wall-clock pacing)
+        #[arg(long)]
+        accelerated: bool,
+        /// stop automatically after this many seconds of wall time (default: run until interrupted)
+        #[arg(long)]
+        seconds: Option<f64>,
+        /// pin an input device id (default: follow the system default)
+        #[arg(long)]
+        device: Option<String>,
+    },
+    /// Repair interrupted recordings in DIR (header repair from file length) and list recoverable ones
+    Recover { dir: PathBuf },
+    /// List audio input devices
+    Devices,
     /// Print stream info (codec, rate, channels, duration) without decoding
     Info { input: PathBuf },
 }
@@ -35,13 +62,134 @@ fn run(cli: Cli) -> parlo_core::Result<()> {
             let p = prepare::prepare_audio(&input, &output, &cancel, |_| {})?;
             println!(
                 "{} -> {} : {:.3} s, {} frames @ {} Hz ({:?}; {} Hz src, {} ch) in {:.2}s",
-                input.display(), output.display(), p.duration_s, p.frames, prepare::STT_RATE, p.source.codec, p.source.sample_rate, p.source.channels, t.elapsed().as_secs_f64()
+                input.display(),
+                output.display(),
+                p.duration_s,
+                p.frames,
+                prepare::STT_RATE,
+                p.source.codec,
+                p.source.sample_rate,
+                p.source.channels,
+                t.elapsed().as_secs_f64()
             );
         }
+        Cmd::Devices => {
+            let input = parlo_core::platform::cpal_input::CpalInput::new();
+            for d in parlo_core::platform::AudioInput::devices(&input)? {
+                println!(
+                    "{}{}\t{}",
+                    if d.is_default { "* " } else { "  " },
+                    d.id,
+                    d.name
+                );
+            }
+        }
+        Cmd::Recover { dir } => {
+            let rec = parlo_core::recorder::recovery::recover_all(&dir)?;
+            for r in &rec {
+                println!(
+                    "{}",
+                    serde_json::json!({"id": r.id, "wav": r.wav, "frames": r.sidecar.frames_written, "duration_ms": r.sidecar.duration_ms, "sample_rate": r.sidecar.sample_rate})
+                );
+            }
+            eprintln!("{} recoverable recording(s)", rec.len());
+        }
+        Cmd::Record {
+            dir,
+            source,
+            rate,
+            accelerated,
+            seconds,
+            device,
+        } => record(dir, source, rate, accelerated, seconds, device)?,
         Cmd::Info { input } => {
             let i = decode::probe_info(&input)?;
-            println!("{}", serde_json::json!({"codec": i.codec, "sample_rate": i.sample_rate, "channels": i.channels, "duration_s": i.duration_s}));
+            println!(
+                "{}",
+                serde_json::json!({"codec": i.codec, "sample_rate": i.sample_rate, "channels": i.channels, "duration_s": i.duration_s})
+            );
         }
     }
+    Ok(())
+}
+
+fn record(
+    dir: PathBuf,
+    source: String,
+    rate: u32,
+    accelerated: bool,
+    seconds: Option<f64>,
+    device: Option<String>,
+) -> parlo_core::Result<()> {
+    use parlo_core::platform::file_source::{
+        CounterSignal, FileSource, Mode, SineSignal, WavSignal,
+    };
+    use parlo_core::platform::*;
+    use parlo_core::recorder::{start, RecorderConfig, RecorderDeps};
+    use std::sync::Arc;
+    let mode = if accelerated {
+        Mode::Accelerated
+    } else {
+        Mode::Realtime
+    };
+    let input: Arc<dyn AudioInput> = match source.as_str() {
+        "mic" => Arc::new(cpal_input::CpalInput::new()),
+        "counter" => Arc::new(FileSource::new(Box::new(CounterSignal), rate, 1, mode)),
+        "sine" => Arc::new(FileSource::new(
+            Box::new(SineSignal {
+                freq: 440.0,
+                amp: 0.3,
+                rate: rate as f32,
+            }),
+            rate,
+            1,
+            mode,
+        )),
+        s if s.starts_with("wav:") => Arc::new(FileSource::new(
+            Box::new(WavSignal::open(std::path::Path::new(&s[4..]))?),
+            rate,
+            1,
+            mode,
+        )),
+        other => {
+            return Err(parlo_core::Error::Other(format!(
+                "unknown source '{other}'"
+            )))
+        }
+    };
+    let mut cfg = RecorderConfig::new(&dir);
+    if let Some(d) = device {
+        cfg.device = DeviceSelector::Named(d);
+    }
+    let deps = RecorderDeps {
+        input,
+        power: Arc::new(NoopPowerGuard),
+        sleep_wake: Arc::new(ManualSleepWake::new()),
+        disk: Arc::new(SystemDisk),
+    };
+    let (tx, rx) = crossbeam_channel::unbounded();
+    let h = start(cfg, deps, tx)?;
+    println!("{}", serde_json::json!({"recording": h.id()}));
+    use std::io::Write;
+    let _ = std::io::stdout().flush();
+    let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let s2 = stop.clone();
+    ctrlc::set_handler(move || s2.store(true, std::sync::atomic::Ordering::SeqCst))
+        .map_err(|e| parlo_core::Error::Other(e.to_string()))?;
+    let t = std::time::Instant::now();
+    while !stop.load(std::sync::atomic::Ordering::SeqCst)
+        && seconds.is_none_or(|s| t.elapsed().as_secs_f64() < s)
+    {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        for w in rx.try_iter() {
+            eprintln!("warning: {w:?}");
+        }
+        let snap = h.snapshot();
+        if snap.state == parlo_core::recorder::RecorderState::Stopped {
+            break;
+        }
+    }
+    let info = h.stop()?;
+    println!("{}", serde_json::to_string(&info.sidecar).unwrap());
     Ok(())
 }

@@ -23,7 +23,12 @@ pub fn f32_to_i16(x: f32) -> i16 {
 }
 
 /// Decode `src` into `dest` (16 kHz mono PCM16 WAV). `progress` gets 0..=1 (if the container knows its length).
-pub fn prepare_audio(src: &Path, dest: &Path, cancel: &AtomicBool, progress: impl FnMut(f64)) -> Result<Prepared> {
+pub fn prepare_audio(
+    src: &Path,
+    dest: &Path,
+    cancel: &AtomicBool,
+    progress: impl FnMut(f64),
+) -> Result<Prepared> {
     let tmp = dest.with_extension("part");
     let mut writer = WavWriter::create(&tmp, 1, STT_RATE)?;
     let mut rs: Option<StreamResampler> = None;
@@ -69,5 +74,10 @@ pub fn prepare_audio(src: &Path, dest: &Path, cancel: &AtomicBool, progress: imp
         return Err(crate::error::DecodeError::ZeroDuration.into());
     }
     std::fs::rename(&tmp, dest).map_err(|e| Error::io(dest, e))?;
-    Ok(Prepared { path: dest.to_path_buf(), frames, duration_s: frames as f64 / STT_RATE as f64, source: info })
+    Ok(Prepared {
+        path: dest.to_path_buf(),
+        frames,
+        duration_s: frames as f64 / STT_RATE as f64,
+        source: info,
+    })
 }

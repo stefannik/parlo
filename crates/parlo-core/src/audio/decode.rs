@@ -38,7 +38,9 @@ fn registry() -> &'static CodecRegistry {
 fn map_err(e: SymError, what: &str) -> Error {
     match e {
         SymError::Unsupported(m) => DecodeError::Unsupported(format!("{what}: {m}")).into(),
-        SymError::IoError(ioe) if ioe.kind() == std::io::ErrorKind::UnexpectedEof => DecodeError::Corrupt("the file ends unexpectedly".into()).into(),
+        SymError::IoError(ioe) if ioe.kind() == std::io::ErrorKind::UnexpectedEof => {
+            DecodeError::Corrupt("the file ends unexpectedly".into()).into()
+        }
         SymError::IoError(ioe) => Error::IoBare(ioe),
         other => DecodeError::Corrupt(format!("{what}: {other}")).into(),
     }
@@ -64,9 +66,16 @@ pub fn decode_mono(
         hint.with_extension(ext);
     }
     let mut format = get_probe()
-        .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
+        .probe(
+            &hint,
+            mss,
+            FormatOptions::default(),
+            MetadataOptions::default(),
+        )
         .map_err(|e| match e {
-            SymError::Unsupported(_) => Error::from(DecodeError::Unsupported("unrecognised or damaged file".into())),
+            SymError::Unsupported(_) => Error::from(DecodeError::Unsupported(
+                "unrecognised or damaged file".into(),
+            )),
             other => map_err(other, "opening the file"),
         })?;
 
@@ -90,14 +99,23 @@ pub fn decode_mono(
 
     let mut info = AudioInfo {
         sample_rate: params.sample_rate.unwrap_or(0),
-        channels: params.channels.as_ref().map(|c| c.count() as u16).unwrap_or(0),
+        channels: params
+            .channels
+            .as_ref()
+            .map(|c| c.count() as u16)
+            .unwrap_or(0),
         duration_s,
         codec: format!("{:?}", params.codec),
     };
     let track_id = track.id;
     // ISO-MP4 edit list (AAC priming) — symphonia's isomp4 reader is not gapless.
-    let is_mp4 = format.format_info().short_name.contains("mp4") || format.format_info().short_name.contains("isomp4");
-    let edit = if is_mp4 { super::mp4_edit::audio_edit(path, track_id) } else { None };
+    let is_mp4 = format.format_info().short_name.contains("mp4")
+        || format.format_info().short_name.contains("isomp4");
+    let edit = if is_mp4 {
+        super::mp4_edit::audio_edit(path, track_id)
+    } else {
+        None
+    };
     let mut skip_frames: Option<u64> = None; // computed once the decoded rate is known
     let mut keep_frames: Option<u64> = None;
     let mut interleaved: Vec<f32> = Vec::new();
@@ -120,8 +138,12 @@ pub fn decode_mono(
         if packet.track_id != track_id {
             continue;
         }
-        let trim_s = tb.map(|tb| tb.calc_duration_saturating(packet.trim_start).as_secs_f64()).unwrap_or(0.0);
-        let trim_e = tb.map(|tb| tb.calc_duration_saturating(packet.trim_end).as_secs_f64()).unwrap_or(0.0);
+        let trim_s = tb
+            .map(|tb| tb.calc_duration_saturating(packet.trim_start).as_secs_f64())
+            .unwrap_or(0.0);
+        let trim_e = tb
+            .map(|tb| tb.calc_duration_saturating(packet.trim_end).as_secs_f64())
+            .unwrap_or(0.0);
         let buf: GenericAudioBufferRef<'_> = match decoder.decode(&packet) {
             Ok(b) => b,
             Err(SymError::DecodeError(_)) | Err(SymError::IoError(_)) => {
@@ -158,7 +180,10 @@ pub fn decode_mono(
             }
         }
         let mut start = ((trim_s * rate as f64).round() as usize).min(mono.len());
-        let mut end = mono.len().saturating_sub((trim_e * rate as f64).round() as usize).max(start);
+        let mut end = mono
+            .len()
+            .saturating_sub((trim_e * rate as f64).round() as usize)
+            .max(start);
         if let Some(e) = edit {
             if skip_frames.is_none() {
                 skip_frames = Some((e.skip_s * rate as f64).round() as u64);
@@ -210,20 +235,38 @@ pub fn probe_info(path: &Path) -> Result<AudioInfo> {
         hint.with_extension(ext);
     }
     let format = get_probe()
-        .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
-        .map_err(|_| Error::from(DecodeError::Unsupported("unrecognised or damaged file".into())))?;
-    let track = format.default_track(TrackType::Audio).ok_or(DecodeError::NoAudioTrack)?;
+        .probe(
+            &hint,
+            mss,
+            FormatOptions::default(),
+            MetadataOptions::default(),
+        )
+        .map_err(|_| {
+            Error::from(DecodeError::Unsupported(
+                "unrecognised or damaged file".into(),
+            ))
+        })?;
+    let track = format
+        .default_track(TrackType::Audio)
+        .ok_or(DecodeError::NoAudioTrack)?;
     let params = match &track.codec_params {
         Some(symphonia::core::codecs::CodecParameters::Audio(p)) => p,
         _ => return Err(DecodeError::NoAudioTrack.into()),
     };
-    let duration_s = match (track.time_base, track.num_frames.or(track.duration.map(|d| d.get()))) {
+    let duration_s = match (
+        track.time_base,
+        track.num_frames.or(track.duration.map(|d| d.get())),
+    ) {
         (Some(tb), Some(n)) => tb.calc_duration(n.into()).map(|t| t.as_secs_f64()),
         _ => None,
     };
     Ok(AudioInfo {
         sample_rate: params.sample_rate.unwrap_or(0),
-        channels: params.channels.as_ref().map(|c| c.count() as u16).unwrap_or(0),
+        channels: params
+            .channels
+            .as_ref()
+            .map(|c| c.count() as u16)
+            .unwrap_or(0),
         duration_s,
         codec: format!("{:?}", params.codec),
     })

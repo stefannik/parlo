@@ -16,7 +16,6 @@ pub struct EditInfo {
 
 struct BoxHdr {
     kind: [u8; 4],
-    start: u64,
     payload: u64,
     end: u64,
 }
@@ -41,7 +40,11 @@ fn read_box(f: &mut File, pos: u64, limit: u64) -> Option<BoxHdr> {
     if size < hdr || pos + size > limit {
         return None;
     }
-    Some(BoxHdr { kind: [h[4], h[5], h[6], h[7]], start: pos, payload: pos + hdr, end: pos + size })
+    Some(BoxHdr {
+        kind: [h[4], h[5], h[6], h[7]],
+        payload: pos + hdr,
+        end: pos + size,
+    })
 }
 
 fn children(f: &mut File, parent: &BoxHdr) -> Vec<BoxHdr> {
@@ -74,12 +77,20 @@ pub fn audio_edit(path: &Path, track_id: u32) -> Option<EditInfo> {
     let kids = children(&mut f, moov);
     let mvhd = kids.iter().find(|b| &b.kind == b"mvhd")?;
     let d = read_bytes(&mut f, mvhd.payload, 24)?;
-    let movie_ts = if d[0] == 1 { u32::from_be_bytes([d[20], d[21], d[22], d[23]]) } else { u32::from_be_bytes([d[12], d[13], d[14], d[15]]) } as f64;
+    let movie_ts = if d[0] == 1 {
+        u32::from_be_bytes([d[20], d[21], d[22], d[23]])
+    } else {
+        u32::from_be_bytes([d[12], d[13], d[14], d[15]])
+    } as f64;
     for trak in kids.iter().filter(|b| &b.kind == b"trak") {
         let tk = children(&mut f, trak);
         let tkhd = tk.iter().find(|b| &b.kind == b"tkhd")?;
         let d = read_bytes(&mut f, tkhd.payload, 24)?;
-        let id = if d[0] == 1 { u32::from_be_bytes([d[20], d[21], d[22], d[23]]) } else { u32::from_be_bytes([d[12], d[13], d[14], d[15]]) };
+        let id = if d[0] == 1 {
+            u32::from_be_bytes([d[20], d[21], d[22], d[23]])
+        } else {
+            u32::from_be_bytes([d[12], d[13], d[14], d[15]])
+        };
         if id != track_id {
             continue;
         }
@@ -87,9 +98,15 @@ pub fn audio_edit(path: &Path, track_id: u32) -> Option<EditInfo> {
         let md = children(&mut f, mdia);
         let mdhd = md.iter().find(|b| &b.kind == b"mdhd")?;
         let d = read_bytes(&mut f, mdhd.payload, 24)?;
-        let media_ts = if d[0] == 1 { u32::from_be_bytes([d[20], d[21], d[22], d[23]]) } else { u32::from_be_bytes([d[12], d[13], d[14], d[15]]) } as f64;
+        let media_ts = if d[0] == 1 {
+            u32::from_be_bytes([d[20], d[21], d[22], d[23]])
+        } else {
+            u32::from_be_bytes([d[12], d[13], d[14], d[15]])
+        } as f64;
         let edts = tk.iter().find(|b| &b.kind == b"edts")?;
-        let elst = children(&mut f, edts).into_iter().find(|b| &b.kind == b"elst")?;
+        let elst = children(&mut f, edts)
+            .into_iter()
+            .find(|b| &b.kind == b"elst")?;
         let d = read_bytes(&mut f, elst.payload, (elst.end - elst.payload) as usize)?;
         let version = d[0];
         let n = u32::from_be_bytes([d[4], d[5], d[6], d[7]]) as usize;
@@ -130,7 +147,10 @@ pub fn audio_edit(path: &Path, track_id: u32) -> Option<EditInfo> {
         if first_real {
             return None;
         }
-        return Some(EditInfo { skip_s: skip, keep_s: keep.filter(|k| *k > 0.0) });
+        return Some(EditInfo {
+            skip_s: skip,
+            keep_s: keep.filter(|k| *k > 0.0),
+        });
     }
     None
 }

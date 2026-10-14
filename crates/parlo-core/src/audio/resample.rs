@@ -20,12 +20,37 @@ pub struct StreamResampler {
 impl StreamResampler {
     pub fn new(in_rate: u32, out_rate: u32) -> Result<Self> {
         if in_rate == out_rate {
-            return Ok(Self { inner: None, in_rate, out_rate, pending: vec![], out_chunk: vec![], total_in: 0, total_out: 0, skip: 0 });
+            return Ok(Self {
+                inner: None,
+                in_rate,
+                out_rate,
+                pending: vec![],
+                out_chunk: vec![],
+                total_in: 0,
+                total_out: 0,
+                skip: 0,
+            });
         }
-        let r = Fft::<f32>::new(in_rate as usize, out_rate as usize, CHUNK, 1, FixedSync::Input).map_err(|e| Error::Other(format!("resampler: {e}")))?;
+        let r = Fft::<f32>::new(
+            in_rate as usize,
+            out_rate as usize,
+            CHUNK,
+            1,
+            FixedSync::Input,
+        )
+        .map_err(|e| Error::Other(format!("resampler: {e}")))?;
         let skip = r.output_delay();
         let out_chunk = vec![0f32; r.output_frames_max()];
-        Ok(Self { inner: Some(r), in_rate, out_rate, pending: Vec::with_capacity(CHUNK * 2), out_chunk, total_in: 0, total_out: 0, skip })
+        Ok(Self {
+            inner: Some(r),
+            in_rate,
+            out_rate,
+            pending: Vec::with_capacity(CHUNK * 2),
+            out_chunk,
+            total_in: 0,
+            total_out: 0,
+            skip,
+        })
     }
 
     fn run_chunk(&mut self, partial: Option<usize>, out: &mut Vec<f32>) -> Result<()> {
@@ -34,11 +59,15 @@ impl StreamResampler {
         let mut buf = vec![0f32; need];
         let n = partial.unwrap_or(need).min(self.pending.len());
         buf[..n].copy_from_slice(&self.pending[..n]);
-        let inp = InterleavedSlice::new(&buf, 1, need).map_err(|e| Error::Other(format!("resampler: {e}")))?;
+        let inp = InterleavedSlice::new(&buf, 1, need)
+            .map_err(|e| Error::Other(format!("resampler: {e}")))?;
         let max_out = self.out_chunk.len();
-        let mut outb = InterleavedSlice::new_mut(&mut self.out_chunk, 1, max_out).map_err(|e| Error::Other(format!("resampler: {e}")))?;
+        let mut outb = InterleavedSlice::new_mut(&mut self.out_chunk, 1, max_out)
+            .map_err(|e| Error::Other(format!("resampler: {e}")))?;
         let idx = rubato::Indexing::new().partial_len(n);
-        let (_consumed, produced) = r.process_into_buffer(&inp, &mut outb, Some(&idx)).map_err(|e| Error::Other(format!("resampler: {e}")))?;
+        let (_consumed, produced) = r
+            .process_into_buffer(&inp, &mut outb, Some(&idx))
+            .map_err(|e| Error::Other(format!("resampler: {e}")))?;
         self.pending.drain(..n);
         let mut s = &self.out_chunk[..produced];
         if self.skip > 0 {
@@ -72,13 +101,18 @@ impl StreamResampler {
         if self.inner.is_none() {
             return Ok(());
         }
-        let expected = (self.total_in as u128 * self.out_rate as u128).div_ceil(self.in_rate as u128) as u64;
+        let expected =
+            (self.total_in as u128 * self.out_rate as u128).div_ceil(self.in_rate as u128) as u64;
         let before = out.len();
         // remaining real input (partial chunk), then silence to flush the filter delay
         let mut guard = 0;
         let mut first = true;
         while self.total_out + ((out.len() - before) as u64) < expected && guard < 16 {
-            let part = if first { Some(self.pending.len()) } else { Some(0) };
+            let part = if first {
+                Some(self.pending.len())
+            } else {
+                Some(0)
+            };
             first = false;
             self.run_chunk(part, out)?;
             guard += 1;

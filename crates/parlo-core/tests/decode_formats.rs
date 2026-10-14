@@ -17,9 +17,15 @@ fn check(rel: &str, tol_s: f64) {
     let src = fixture(rel);
     let dir = tempfile::tempdir().unwrap();
     let dest = dir.path().join("out.wav");
-    let p = prepare_audio(&src, &dest, &AtomicBool::new(false), |_| {}).unwrap_or_else(|e| panic!("{rel}: {e}"));
+    let p = prepare_audio(&src, &dest, &AtomicBool::new(false), |_| {})
+        .unwrap_or_else(|e| panic!("{rel}: {e}"));
     let want = source_duration();
-    assert!((p.duration_s - want).abs() <= tol_s, "{rel}: duration {:.3}s, expected {:.3}s ±{tol_s}", p.duration_s, want);
+    assert!(
+        (p.duration_s - want).abs() <= tol_s,
+        "{rel}: duration {:.3}s, expected {:.3}s ±{tol_s}",
+        p.duration_s,
+        want
+    );
     // sample count consistent with duration, header consistent with file
     let f = PcmFile::open(&dest).unwrap();
     assert_eq!(f.sample_rate, STT_RATE);
@@ -65,7 +71,12 @@ fmt_test!(video_webm, "video_vp9_opus.webm");
 
 fn expect_decode_err(rel: &str) -> DecodeError {
     let dir = tempfile::tempdir().unwrap();
-    match prepare_audio(&fixture(rel), &dir.path().join("o.wav"), &AtomicBool::new(false), |_| {}) {
+    match prepare_audio(
+        &fixture(rel),
+        &dir.path().join("o.wav"),
+        &AtomicBool::new(false),
+        |_| {},
+    ) {
         Err(Error::Decode(e)) => e,
         other => panic!("{rel}: expected a DecodeError, got {other:?}"),
     }
@@ -73,30 +84,53 @@ fn expect_decode_err(rel: &str) -> DecodeError {
 
 #[test]
 fn rejects_empty_file() {
-    assert!(matches!(expect_decode_err("generated/formats/empty.wav"), DecodeError::Empty));
+    assert!(matches!(
+        expect_decode_err("generated/formats/empty.wav"),
+        DecodeError::Empty
+    ));
 }
 #[test]
 fn rejects_video_without_audio_track() {
-    assert!(matches!(expect_decode_err("generated/formats/novideo_noaudio.mp4"), DecodeError::NoAudioTrack));
+    assert!(matches!(
+        expect_decode_err("generated/formats/novideo_noaudio.mp4"),
+        DecodeError::NoAudioTrack
+    ));
 }
 #[test]
 fn rejects_zero_duration() {
     let e = expect_decode_err("generated/formats/zero_duration.wav");
-    assert!(matches!(e, DecodeError::ZeroDuration | DecodeError::Corrupt(_) | DecodeError::Unsupported(_)), "{e:?}");
+    assert!(
+        matches!(
+            e,
+            DecodeError::ZeroDuration | DecodeError::Corrupt(_) | DecodeError::Unsupported(_)
+        ),
+        "{e:?}"
+    );
 }
 #[test]
 fn rejects_garbage() {
     let e = expect_decode_err("generated/formats/garbage.mp3");
-    assert!(matches!(e, DecodeError::Unsupported(_) | DecodeError::Corrupt(_)), "{e:?}");
+    assert!(
+        matches!(e, DecodeError::Unsupported(_) | DecodeError::Corrupt(_)),
+        "{e:?}"
+    );
 }
 
 #[test]
 fn cancel_is_honored() {
     let dir = tempfile::tempdir().unwrap();
     let cancel = AtomicBool::new(true);
-    let r = prepare_audio(&fixture("generated/formats/flac.flac"), &dir.path().join("o.wav"), &cancel, |_| {});
+    let r = prepare_audio(
+        &fixture("generated/formats/flac.flac"),
+        &dir.path().join("o.wav"),
+        &cancel,
+        |_| {},
+    );
     assert!(matches!(r, Err(Error::Cancelled)));
-    assert!(!dir.path().join("o.wav").exists() && !dir.path().join("o.part").exists(), "no partial output left behind");
+    assert!(
+        !dir.path().join("o.wav").exists() && !dir.path().join("o.part").exists(),
+        "no partial output left behind"
+    );
 }
 
 /// Decoded *content* must match the source (not just the length): level within 3 dB and normalised
@@ -111,16 +145,29 @@ fn decoded_content_matches_source_for_every_codec() {
         let mut v = Vec::new();
         f.read_f32(0, p.frames as usize, &mut v).unwrap();
         // decimate 8x by block-averaging (crude low-pass) -> 2 kHz
-        v.chunks_exact(8).map(|c| c.iter().sum::<f32>() / 8.0).collect()
+        v.chunks_exact(8)
+            .map(|c| c.iter().sum::<f32>() / 8.0)
+            .collect()
     }
     let base = load("generated/formats/wav_pcm16_16k_mono.wav");
     let rms = |x: &[f32]| (x.iter().map(|v| v * v).sum::<f32>() / x.len() as f32).sqrt();
     // (file, minimum correlation): lossless codecs must be essentially identical; lossy ones merely close.
     let files: [(&str, f32); 15] = [
-        ("alac.m4a", 0.99), ("flac.flac", 0.99), ("aiff_pcm16.aiff", 0.99), ("caf_pcm16.caf", 0.99), ("caf_alac.caf", 0.99),
-        ("wav_pcm24_48k_mono.wav", 0.99), ("wav_float32_48k_stereo.wav", 0.99),
-        ("mp3_128k.mp3", 0.95), ("aac_128k.m4a", 0.9), ("vorbis.ogg", 0.9), ("opus.ogg", 0.85), ("opus.webm", 0.85),
-        ("video_h264_aac.mp4", 0.9), ("video_vp9_opus.webm", 0.85), ("mp3_vbr_mono.mp3", 0.8),
+        ("alac.m4a", 0.99),
+        ("flac.flac", 0.99),
+        ("aiff_pcm16.aiff", 0.99),
+        ("caf_pcm16.caf", 0.99),
+        ("caf_alac.caf", 0.99),
+        ("wav_pcm24_48k_mono.wav", 0.99),
+        ("wav_float32_48k_stereo.wav", 0.99),
+        ("mp3_128k.mp3", 0.95),
+        ("aac_128k.m4a", 0.9),
+        ("vorbis.ogg", 0.9),
+        ("opus.ogg", 0.85),
+        ("opus.webm", 0.85),
+        ("video_h264_aac.mp4", 0.9),
+        ("video_vp9_opus.webm", 0.85),
+        ("mp3_vbr_mono.mp3", 0.8),
     ];
     for (f, min_corr) in files {
         let x = load(&format!("generated/formats/{f}"));
@@ -131,15 +178,18 @@ fn decoded_content_matches_source_for_every_codec() {
         let mut best = f32::MIN;
         for lag in -120i32..=120 {
             let (mut sxy, mut sxx, mut syy) = (0f32, 0f32, 0f32);
-            for i in 130..n {
+            for (i, a) in base.iter().enumerate().take(n).skip(130) {
                 let j = (i as i32 + lag) as usize;
-                let (a, b) = (base[i], x[j]);
+                let (a, b) = (*a, x[j]);
                 sxy += a * b;
                 sxx += a * a;
                 syy += b * b;
             }
             best = best.max(sxy / (sxx * syy).sqrt());
         }
-        assert!(best > min_corr, "{f}: correlation with source only {best:.3} (min {min_corr})");
+        assert!(
+            best > min_corr,
+            "{f}: correlation with source only {best:.3} (min {min_corr})"
+        );
     }
 }

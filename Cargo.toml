@@ -17,3 +17,7 @@ debug = false
 
 [profile.dev.package."*"]
 opt-level = 2
+
+# Tests run the real-time pipeline (3 h soak etc.); keep them fast.
+[profile.test]
+opt-level = 2
