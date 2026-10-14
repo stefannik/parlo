@@ -8,8 +8,11 @@ pub use error::{Error, Result};
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
+pub mod jobs;
+pub mod models;
 pub mod platform;
 pub mod recorder;
+pub mod store;
 pub mod stt;
 pub mod text;
 pub mod tts;
