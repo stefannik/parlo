@@ -479,7 +479,7 @@ fn fifty_thousand_words_complete_with_bounded_memory_monotonic_progress_and_resu
     .unwrap();
     assert_eq!(
         first_run_calls + calls2.load(Ordering::SeqCst),
-        1000 + 0,
+        1000,
         "every chunk synthesized exactly once across both runs (cancel is checked between chunks)"
     );
     let after = hwm_mb();
