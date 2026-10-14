@@ -136,4 +136,8 @@ impl ModelPaths {
     pub fn pockettts(&self) -> PathBuf {
         self.root.join("pockettts")
     }
+    /// Pre-generated ~3 s voice samples (`<voice>.mp3`), committed to the repo and bundled next to the models.
+    pub fn previews_dir(&self) -> PathBuf {
+        self.root.join("../resources/voice-previews")
+    }
 }

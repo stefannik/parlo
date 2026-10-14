@@ -1,0 +1,45 @@
+[package]
+name = "parlo-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Parlo: fully local speech-to-text and text-to-speech"
+default-run = "parlo"
+
+[lib]
+name = "parlo_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "parlo"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2.5", features = [] }
+
+[dependencies]
+parlo-core = { path = "../crates/parlo-core" }
+tauri = { version = "2.12", features = ["protocol-asset", "image-png"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-window-state = "2"
+tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
+specta = "=2.0.0-rc.25"
+specta-typescript = "0.0.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+crossbeam-channel = "0.5"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+
+[features]
+default = []
+whisper-metal = ["parlo-core/whisper-metal"]
+tts-metal = ["parlo-core/tts-metal"]
+
+[target.'cfg(target_os = "macos")'.dependencies]
+parlo-macos = { path = "../crates/parlo-macos" }

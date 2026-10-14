@@ -1,0 +1,403 @@
+//! IPC contract (BRIEF §5.4). Every type here derives `specta::Type`, so `ui/src/bindings.ts` is *generated* from
+//! these definitions (`cargo test -p parlo-app export_bindings`) — the TypeScript side never re-declares them.
+
+use parlo_core::error::{DecodeError, Error};
+use serde::{Deserialize, Serialize};
+use specta::Type;
+use tauri_specta::Event;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct IpcError {
+    /// machine-readable: `mic_permission`, `disk_space`, `decode`, `cancelled`, `model_missing`, `busy`, `invalid`, `io`, `other`
+    pub code: String,
+    /// human-readable, shown in the UI
+    pub message: String,
+    pub detail: Option<String>,
+}
+
+impl IpcError {
+    pub fn new(code: &str, message: impl Into<String>) -> Self {
+        Self { code: code.into(), message: message.into(), detail: None }
+    }
+}
+
+impl From<Error> for IpcError {
+    fn from(e: Error) -> Self {
+        let message = e.to_string();
+        let code = match &e {
+            Error::MicPermission => "mic_permission",
+            Error::DiskSpace { .. } => "disk_space",
+            Error::Cancelled => "cancelled",
+            Error::Decode(DecodeError::Unsupported(_)) | Error::Decode(_) => "decode",
+            Error::Io { .. } | Error::IoBare(_) => "io",
+            Error::State(_) => "invalid",
+            Error::Other(m) if m.contains("model") && m.contains("not found") => "model_missing",
+            _ => "other",
+        };
+        Self { code: code.into(), message, detail: Some(format!("{e:?}")) }
+    }
+}
+
+pub type IpcResult<T> = Result<T, IpcError>;
+
+// ---------------------------------------------------------------------------------------------------- app info
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct ModelFileInfo {
+    pub name: String,
+    pub path: String,
+    pub present: bool,
+    pub size_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct AppInfo {
+    pub version: String,
+    pub stt_engine: String,
+    pub tts_engine: String,
+    pub models: Vec<ModelFileInfo>,
+    pub data_dir: String,
+    pub recordings_dir: String,
+    pub logs_dir: String,
+    pub platform: String,
+}
+
+// ---------------------------------------------------------------------------------------------------- settings
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Appearance {
+    System,
+    Light,
+    Dark,
+}
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Performance {
+    Balanced,
+    Maximum,
+}
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Retention {
+    Day1,
+    Days7,
+    Days30,
+    Forever,
+}
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum IdleUnload {
+    Immediately,
+    Secs60,
+    Mins5,
+    Mins15,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct SettingsDto {
+    pub appearance: Appearance,
+    pub model_idle_timeout: IdleUnload,
+    pub performance: Performance,
+    pub input_device: Option<String>,
+    pub recording_retention: Retention,
+    pub default_language: String,
+    pub default_voice: String,
+    pub default_speed: f32,
+    pub tts_quality: String,
+}
+
+/// Partial update: only the fields present are changed.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Type)]
+pub struct SettingsPatch {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub appearance: Option<Appearance>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_idle_timeout: Option<IdleUnload>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub performance: Option<Performance>,
+    /// `Some(None)` = follow the system default; `Some(Some(id))` = pin a device
+    #[serde(default, deserialize_with = "double_option", skip_serializing_if = "Option::is_none")]
+    #[specta(optional = nullable)]
+    pub input_device: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recording_retention: Option<Retention>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_language: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_voice: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_speed: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tts_quality: Option<String>,
+}
+
+fn double_option<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Ok(Some(Option::deserialize(d)?))
+}
+
+// ---------------------------------------------------------------------------------------------------- audio devices / mic
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MicPermission {
+    NotDetermined,
+    Granted,
+    Denied,
+    Restricted,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct InputDeviceDto {
+    pub id: String,
+    pub name: String,
+    pub is_default: bool,
+}
+
+// ---------------------------------------------------------------------------------------------------- recording
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct GapDto {
+    pub at_ms: u64,
+    pub reason: String,
+    pub gap_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct RecordingInfoDto {
+    pub id: String,
+    pub wav_path: String,
+    pub sample_rate: u32,
+    pub duration_ms: u64,
+    pub started_at: String,
+    pub state: String,
+    pub gaps: Vec<GapDto>,
+    pub device: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct RecorderStateEvent {
+    /// `idle` | `recording` | `paused`
+    pub state: String,
+    pub id: Option<String>,
+    pub elapsed_ms: u64,
+    pub device: String,
+    pub rms: f32,
+    pub peak: f32,
+    pub gaps: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RecorderWarningDto {
+    DeviceChanged { from: String, to: String },
+    PinnedDeviceLost { pinned: String, fallback: String },
+    StreamRestarted { reason: String },
+    ResumedAfterSleep { gap_ms: u64 },
+    LowDisk { free_mb: u64 },
+    SilentInput,
+    Clipping,
+    Stopped { reason: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct RecorderWarningEvent {
+    pub warning: RecorderWarningDto,
+}
+
+// ---------------------------------------------------------------------------------------------------- models / jobs
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct ModelsStateEvent {
+    /// `stt` | `tts`
+    pub engine: String,
+    /// `unloaded` | `loading` | `ready`
+    pub state: String,
+    pub unload_in_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct JobChangedEvent {
+    pub id: u32,
+    pub engine: String,
+    pub label: String,
+    /// `queued` | `running` | `done` | `failed` | `cancelled`
+    pub state: String,
+    pub error: Option<String>,
+}
+
+/// Menu items and shortcuts are forwarded to the UI as one event (`menu:<id>` semantics in a typed form).
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct MenuActionEvent {
+    pub action: String,
+}
+
+/// Emitted when ⌘Q (or the Quit menu) is requested while the window is open: the UI shows its own confirmation.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct QuitRequestedEvent {
+    pub recording: bool,
+    pub job_running: bool,
+}
+
+// ---------------------------------------------------------------------------------------------------- transcription
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SttSource {
+    Path { path: String },
+    Recording { recording_id: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct TranscribeRequest {
+    pub source: SttSource,
+    /// "auto" or an ISO-639-1 code
+    pub language: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct TranscriptDto {
+    pub text: String,
+    pub language: Option<String>,
+    pub language_prob: Option<f32>,
+    pub duration_s: f64,
+    pub speech_s: f64,
+    pub words: u32,
+    pub processing_s: f64,
+    pub source_name: String,
+    pub recording_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum SttEventDto {
+    /// `preparing` | `detecting_speech` | `detecting_language` | `loading_model` | `transcribing`
+    Stage { stage: String },
+    StageProgress { fraction: f64 },
+    Language { code: String, prob: f32 },
+    Progress { done_s: f64, total_s: f64, eta_ms: Option<u64> },
+    Paragraph { index: u32, text: String, start_s: f64, end_s: f64 },
+    Done { transcript: TranscriptDto },
+    Error { error: IpcError },
+}
+
+// ---------------------------------------------------------------------------------------------------- TTS
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TtsSource {
+    Text { text: String },
+    Import { import_id: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct TtsRequest {
+    pub source: TtsSource,
+    pub voice: String,
+    /// "standard" | "fast"
+    pub quality: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum TtsEventDto {
+    Stage { stage: String },
+    Progress { done_chars: u32, total_chars: u32, eta_ms: Option<u64> },
+    SegmentReady { index: u32, path: String, duration_ms: u64 },
+    Done { output_id: String, duration_ms: u64, segments: Vec<String>, cache_hit: bool },
+    Error { error: IpcError },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct VoiceDto {
+    pub id: String,
+    pub label: String,
+    /// absolute path of the bundled preview clip (play with the asset protocol), if present
+    pub preview_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct ImportResultDto {
+    pub import_id: String,
+    pub file_name: String,
+    pub kind: String,
+    /// the full text, unless the document is large (then use `preview` and `text_import_full`)
+    pub text: Option<String>,
+    pub preview: String,
+    pub large: bool,
+    pub chars: u32,
+    pub words: u32,
+    pub pages: Option<u32>,
+    pub chapters: Option<u32>,
+    pub est_minutes: f64,
+    pub warnings: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------------------------------- export / workspace / recovery
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum AudioExportFormat {
+    Wav,
+    M4a,
+    Mp3,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum TranscriptExportFormat {
+    Txt,
+    Md,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct TranscriptMeta {
+    pub source_name: String,
+    pub language: Option<String>,
+    pub duration_s: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct WorkspaceTranscriptDto {
+    pub text: String,
+    pub source_name: String,
+    pub language: Option<String>,
+    pub duration_s: f64,
+    pub words: u32,
+    pub edited: bool,
+    pub exported_or_copied: bool,
+    pub recording_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct WorkspaceTtsDto {
+    pub text: String,
+    pub voice: String,
+    pub output_id: Option<String>,
+    pub source_name: Option<String>,
+    /// segment paths of the current output (if it still exists), so the player can be rebuilt on launch
+    pub segments: Vec<String>,
+    pub duration_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Type)]
+pub struct WorkspaceDto {
+    pub transcript: Option<WorkspaceTranscriptDto>,
+    pub tts: Option<WorkspaceTtsDto>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Type)]
+pub struct WorkspacePatch {
+    /// `Some(None)` clears
+    #[serde(default, deserialize_with = "double_option")]
+    #[specta(optional = nullable)]
+    pub transcript: Option<Option<WorkspaceTranscriptDto>>,
+    #[serde(default, deserialize_with = "double_option")]
+    #[specta(optional = nullable)]
+    pub tts: Option<Option<WorkspaceTtsDto>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RecoverableDto {
+    Recording { id: String, wav_path: String, duration_ms: u64, started_at: String },
+    SttJob { job_id: String, source_name: String },
+    TtsJob { job_id: String, text_preview: String, voice: String },
+}

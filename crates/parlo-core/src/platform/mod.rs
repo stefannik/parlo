@@ -4,6 +4,7 @@
 
 pub mod audio_input;
 pub mod file_source;
+pub mod native;
 pub mod system;
 
 #[cfg(feature = "cpal-input")]
@@ -15,3 +16,4 @@ pub use system::{
     MemoryPressureLevel, MemoryRelief, NoopPowerGuard, PdfTextExtractor, PowerEvent, PowerGuard,
     SleepWakeEvents, SystemDisk,
 };
+pub use native::Platform;

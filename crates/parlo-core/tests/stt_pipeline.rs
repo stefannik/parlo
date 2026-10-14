@@ -194,23 +194,9 @@ fn language_setting_is_respected_and_changes_invalidate_the_checkpoint() {
 
 #[test]
 fn two_hour_file_runs_with_bounded_memory() {
-    fn hwm_mb() -> f64 {
-        let s = std::fs::read_to_string("/proc/self/status").unwrap();
-        s.lines()
-            .find_map(|l| l.strip_prefix("VmHWM:"))
-            .map(|v| {
-                v.trim()
-                    .trim_end_matches(" kB")
-                    .trim()
-                    .parse::<f64>()
-                    .unwrap()
-                    / 1024.0
-            })
-            .unwrap()
-    }
     let dir = tempfile::tempdir().unwrap();
     let j = job("generated/edge/en_2h.wav", dir.path());
-    let before = hwm_mb();
+    let before = common::peak_rss_mb();
     let mut v = vad();
     let mut eng = Scripted {
         calls: Arc::new(AtomicUsize::new(0)),
@@ -231,7 +217,7 @@ fn two_hour_file_runs_with_bounded_memory() {
         &Arc::new(AtomicBool::new(false)),
     )
     .unwrap();
-    let after = hwm_mb();
+    let after = common::peak_rss_mb();
     eprintln!(
         "2 h pipeline: {} chunks, {:.0}s wall, peak RSS {:.0} MB (before {:.0} MB)",
         t.chunks_total, t.processing_s, after, before

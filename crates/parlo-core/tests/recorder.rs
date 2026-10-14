@@ -1,4 +1,5 @@
 //! Recorder pipeline tests (BRIEF §8, §14.1) driven by `FileSource` — the real ring buffer / writer / supervisor.
+mod common;
 use crossbeam_channel::{unbounded, Receiver};
 use parlo_core::audio::wav::{repair_wav, PcmFile};
 use parlo_core::error::Error;
@@ -454,29 +455,15 @@ fn recovery_repairs_a_truncated_recording() {
 
 #[test]
 fn soak_three_hours_accelerated_has_exact_frame_count_and_bounded_memory() {
-    fn rss_mb() -> f64 {
-        let s = std::fs::read_to_string("/proc/self/status").unwrap();
-        s.lines()
-            .find_map(|l| l.strip_prefix("VmRSS:"))
-            .map(|v| {
-                v.trim()
-                    .trim_end_matches(" kB")
-                    .trim()
-                    .parse::<f64>()
-                    .unwrap()
-                    / 1024.0
-            })
-            .unwrap()
-    }
     let total = 3 * 3600 * 48_000u64;
     let rig = Rig::new(FileSource::counter(48_000, Mode::Accelerated).with_total_frames(total));
-    let rss0 = rss_mb();
+    let rss0 = common::current_rss_mb();
     let mut peak = rss0;
     let t0 = Instant::now();
     let h = start(rig.cfg(), rig.deps(), rig.tx.clone()).unwrap();
     while h.snapshot().frames < total {
         std::thread::sleep(Duration::from_millis(250));
-        peak = peak.max(rss_mb());
+        peak = peak.max(common::current_rss_mb());
     }
     let info = h.stop().unwrap();
     assert_eq!(info.sidecar.frames_written, total, "exact frame count");

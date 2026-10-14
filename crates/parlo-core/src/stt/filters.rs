@@ -6,42 +6,69 @@ use super::engine::SegmentOut;
 use regex::Regex;
 use std::sync::OnceLock;
 
-// ctric constants
-pub const MIN_TRANSCRIBE_RMS: f32 = 0.004;
-pub const MIN_TRANSCRIBE_PEAK: f32 = 0.02;
+// Energy thresholds. ctric's values (peak 0.02, rms 0.004, voiced 0.012; low-confidence rms 0.009) were tuned for
+// browser-recorded microphone audio with AGC. Real files are far quieter: FLEURS contains utterances with a peak of
+// 0.005–0.01 (−40 dBFS) that Whisper transcribes perfectly well, and the old absolute gate silently dropped them
+// (found by the §6.2 bench: 70 % WER on English). The gate now only rejects *near-digital-silence*; level is handled by
+// normalizing the audio (`normalize_peak`) before VAD and before the model.
+pub const MIN_TRANSCRIBE_RMS: f32 = 0.0003;
+pub const MIN_TRANSCRIBE_PEAK: f32 = 0.003;
 pub const MIN_TRANSCRIBE_VOICED_RATIO: f32 = 0.012;
-pub const LOW_CONFIDENCE_RMS: f32 = 0.009;
+pub const LOW_CONFIDENCE_RMS: f32 = 0.002;
 pub const LOW_CONFIDENCE_VOICED_RATIO: f32 = 0.035;
+/// A sample counts as "voiced" when it is at least this fraction of the chunk's peak (and above the noise floor).
+pub const VOICED_RELATIVE: f32 = 0.1;
+pub const VOICED_FLOOR: f32 = 0.0015;
+
+/// Target peak and maximum boost (+40 dB) of [`normalize_peak`].
+pub const NORMALIZE_TARGET_PEAK: f32 = 0.5;
+pub const NORMALIZE_MAX_GAIN: f32 = 100.0;
+/// Below this peak the audio is treated as silence/quantization noise and never boosted.
+pub const NORMALIZE_FLOOR_PEAK: f32 = 0.0015;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Analysis {
     pub rms: f32,
     pub peak: f32,
-    /// fraction of samples with |x| ≥ MIN_TRANSCRIBE_PEAK
+    /// fraction of samples with |x| ≥ max(VOICED_RELATIVE × peak, VOICED_FLOOR)
     pub voiced_ratio: f32,
 }
 
 pub fn analyze(samples: &[f32]) -> Analysis {
     if samples.is_empty() {
-        return Analysis {
-            rms: 0.0,
-            peak: 0.0,
-            voiced_ratio: 0.0,
-        };
+        return Analysis { rms: 0.0, peak: 0.0, voiced_ratio: 0.0 };
     }
-    let (mut sq, mut peak, mut voiced) = (0f64, 0f32, 0usize);
+    let (mut sq, mut peak) = (0f64, 0f32);
     for s in samples {
-        let a = s.abs();
         sq += (*s as f64) * (*s as f64);
-        peak = peak.max(a);
-        if a >= MIN_TRANSCRIBE_PEAK {
-            voiced += 1;
-        }
+        peak = peak.max(s.abs());
     }
-    Analysis {
-        rms: (sq / samples.len() as f64).sqrt() as f32,
-        peak,
-        voiced_ratio: voiced as f32 / samples.len() as f32,
+    let thr = (peak * VOICED_RELATIVE).max(VOICED_FLOOR);
+    let voiced = samples.iter().filter(|s| s.abs() >= thr).count();
+    Analysis { rms: (sq / samples.len() as f64).sqrt() as f32, peak, voiced_ratio: voiced as f32 / samples.len() as f32 }
+}
+
+/// Peak-normalize a chunk so quiet recordings reach the model at a sensible level. Returns the gain applied
+/// (1.0 = untouched). Audio below `NORMALIZE_FLOOR_PEAK` is never boosted; loud audio is never attenuated.
+pub fn normalize_peak(samples: &mut [f32]) -> f32 {
+    let peak = samples.iter().fold(0f32, |m, s| m.max(s.abs()));
+    if !(NORMALIZE_FLOOR_PEAK..NORMALIZE_TARGET_PEAK).contains(&peak) {
+        return 1.0;
+    }
+    let gain = (NORMALIZE_TARGET_PEAK / peak).min(NORMALIZE_MAX_GAIN);
+    for s in samples.iter_mut() {
+        *s *= gain;
+    }
+    gain
+}
+
+/// Local level normalization for the VAD (analysis copy only): 1 s blocks, each boosted toward the target peak (so no
+/// sample can exceed the target within its block — a loud tail never gets amplified by a quiet neighbour's gain).
+/// A recording that mixes loud and very quiet speakers (FLEURS) would otherwise lose the quiet parts to the VAD's fixed
+/// probability threshold. Gain steps between blocks are harmless for a VAD.
+pub fn level_for_vad(samples: &mut [f32], rate: usize) {
+    for blk in samples.chunks_mut(rate.max(1)) {
+        normalize_peak(blk);
     }
 }
 
@@ -174,7 +201,7 @@ mod tests {
         }
     }
     const QUIET: Analysis = Analysis {
-        rms: 0.002,
+        rms: 0.0008,
         peak: 0.01,
         voiced_ratio: 0.0,
     };
@@ -185,13 +212,39 @@ mod tests {
     };
 
     #[test]
-    fn energy_gate_rejects_silence_and_accepts_speech_levels() {
+    fn energy_gate_rejects_near_silence_but_accepts_quiet_speech() {
         assert!(!should_transcribe(&analyze(&vec![0.0; 16_000])));
-        assert!(!should_transcribe(&analyze(&vec![0.001; 16_000])));
-        let speechy: Vec<f32> = (0..16_000)
-            .map(|i| ((i as f32) * 0.05).sin() * 0.2)
-            .collect();
+        assert!(!should_transcribe(&analyze(&vec![0.001; 16_000])), "constant hiss at −60 dBFS");
+        let speechy: Vec<f32> = (0..16_000).map(|i| ((i as f32) * 0.05).sin() * 0.2).collect();
         assert!(should_transcribe(&analyze(&speechy)));
+        // a quiet recording (peak 0.006, i.e. −44 dBFS) with speech-like bursts must pass the gate
+        let quiet: Vec<f32> = (0..16_000).map(|i| if (i / 3000) % 2 == 0 { ((i as f32) * 0.05).sin() * 0.006 } else { ((i as f32) * 0.05).sin() * 0.0004 }).collect();
+        assert!(should_transcribe(&analyze(&quiet)), "{:?}", analyze(&quiet));
+    }
+
+    #[test]
+    fn normalize_boosts_quiet_audio_only() {
+        let mut quiet: Vec<f32> = (0..1000).map(|i| ((i as f32) * 0.1).sin() * 0.005).collect();
+        let g = normalize_peak(&mut quiet);
+        assert!((g - 100.0).abs() < 1.0, "gain {g} capped at +40 dB");
+        let mut mid: Vec<f32> = (0..1000).map(|i| ((i as f32) * 0.1).sin() * 0.05).collect();
+        normalize_peak(&mut mid);
+        assert!((mid.iter().fold(0f32, |m, s| m.max(s.abs())) - 0.5).abs() < 0.01);
+        let mut loud = vec![0.9f32; 100];
+        assert_eq!(normalize_peak(&mut loud), 1.0);
+        let mut hiss = vec![0.0008f32; 100];
+        assert_eq!(normalize_peak(&mut hiss), 1.0, "digital-silence-level noise is never boosted");
+    }
+
+    #[test]
+    fn vad_leveling_lifts_quiet_blocks_and_never_amplifies_loud_ones() {
+        // 4 s loud (0.6) then 4 s quiet (0.01): the quiet blocks end up at the target peak, the loud ones untouched
+        let mut x: Vec<f32> = (0..8 * 1000).map(|i| ((i as f32) * 0.2).sin() * if i < 4000 { 0.6 } else { 0.01 }).collect();
+        level_for_vad(&mut x, 1000);
+        let peak = |r: std::ops::Range<usize>| x[r].iter().fold(0f32, |m, s| m.max(s.abs()));
+        assert!((peak(0..4000) - 0.6).abs() < 0.02, "loud part untouched");
+        assert!((peak(4000..8000) - 0.5).abs() < 0.02, "quiet part lifted to ≈ 0.5, got {}", peak(4000..8000));
+        assert!(x.iter().all(|s| s.abs() <= 0.61), "no sample is ever amplified beyond the target/its original peak");
     }
 
     #[test]

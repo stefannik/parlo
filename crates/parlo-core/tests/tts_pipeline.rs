@@ -1,5 +1,6 @@
 //! TTS long-text pipeline (BRIEF §9.3, §14.1) with a deterministic tone engine standing in for PocketTTS:
 //! segments + silences, progress, segment_ready events, content-addressed cache, crash resume, bounded RAM on 50 k words.
+mod common;
 use parlo_core::audio::wav::PcmFile;
 use parlo_core::error::{Error, Result};
 use parlo_core::text::segment::{PAUSE_HEADING_MS, PAUSE_PARAGRAPH_MS};
@@ -400,20 +401,6 @@ fn unknown_voice_and_empty_text_are_rejected() {
 
 #[test]
 fn fifty_thousand_words_complete_with_bounded_memory_monotonic_progress_and_resume() {
-    fn hwm_mb() -> f64 {
-        let s = std::fs::read_to_string("/proc/self/status").unwrap();
-        s.lines()
-            .find_map(|l| l.strip_prefix("VmHWM:"))
-            .map(|v| {
-                v.trim()
-                    .trim_end_matches(" kB")
-                    .trim()
-                    .parse::<f64>()
-                    .unwrap()
-                    / 1024.0
-            })
-            .unwrap()
-    }
     let dir = tempfile::tempdir().unwrap();
     // 50 000 words ≈ 300 000 characters in 1 000 paragraphs of ~300 chars
     let words = ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot"];
@@ -434,7 +421,7 @@ fn fifty_thousand_words_complete_with_bounded_memory_monotonic_progress_and_resu
         .map(|b| b.text.split_whitespace().count())
         .sum();
     assert!(total_words >= 50_000);
-    let before = hwm_mb();
+    let before = common::peak_rss_mb();
     let mut eng = ToneEngine::new(60.0);
     let calls = eng.calls.clone();
     let mut last = 0usize;
@@ -482,7 +469,7 @@ fn fifty_thousand_words_complete_with_bounded_memory_monotonic_progress_and_resu
         1000,
         "every chunk synthesized exactly once across both runs (cancel is checked between chunks)"
     );
-    let after = hwm_mb();
+    let after = common::peak_rss_mb();
     eprintln!(
         "50k words: {} segments, {:.1} h of audio, peak RSS {:.0} MB (before {:.0} MB)",
         out.meta.segments.len(),

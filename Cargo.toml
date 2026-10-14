@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/parlo-core", "crates/parlo-cli"]
+members = ["crates/parlo-core", "crates/parlo-cli", "crates/pocket-tts", "crates/parlo-macos", "src-tauri"]
 exclude = ["spike"]
 # src-tauri joins the workspace in Phase 4.
 

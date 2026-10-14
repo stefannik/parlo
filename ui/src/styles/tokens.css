@@ -1,0 +1,112 @@
+/*
+ * Design tokens. Every colour in the app is a custom property here; components never hard-code colours.
+ * Light is the default; dark follows the system (and can be forced via data-theme on <html>).
+ * Contrast (WCAG AA): --text on --bg ≥ 12:1, --text-2 on --surface ≥ 5.5:1, white on --accent ≥ 4.9:1.
+ */
+:root {
+  color-scheme: light dark;
+
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* 8 px grid */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --s7: 48px;
+
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --dur: 170ms;
+
+  --bg: #f4f4f6;
+  --surface: #ffffff;
+  --surface-2: #eeeef2;
+  --surface-hover: #e6e6ec;
+  --border: rgba(0, 0, 0, 0.1);
+  --border-strong: rgba(0, 0, 0, 0.2);
+  --text: #1c1c1e;
+  --text-2: #55555d;
+  --text-3: #6e6e78;
+  --accent: #0a5bd6;
+  --accent-hover: #084cb3;
+  --accent-soft: rgba(10, 91, 214, 0.1);
+  --on-accent: #ffffff;
+  --danger: #c4261d;
+  --danger-soft: rgba(196, 38, 29, 0.1);
+  --success: #1a7f37;
+  --success-soft: rgba(26, 127, 55, 0.12);
+  --warning: #8a5a00;
+  --warning-soft: rgba(176, 112, 0, 0.14);
+  --focus: #0a5bd6;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.06), 0 1px 1px rgba(0, 0, 0, 0.04);
+  --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.06);
+  --meter-bg: rgba(0, 0, 0, 0.08);
+  --scrim: rgba(20, 20, 24, 0.38);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1a1a1c;
+    --surface: #2a2a2d;
+    --surface-2: #343438;
+    --surface-hover: #3e3e43;
+    --border: rgba(255, 255, 255, 0.12);
+    --border-strong: rgba(255, 255, 255, 0.24);
+    --text: #f5f5f7;
+    --text-2: #b4b4bd;
+    --text-3: #9a9aa4;
+    --accent: #2f6fdd;
+    --accent-hover: #4a83e8;
+    --accent-soft: rgba(90, 148, 255, 0.18);
+    --danger: #ff6b61;
+    --danger-soft: rgba(255, 107, 97, 0.16);
+    --success: #4cc972;
+    --success-soft: rgba(76, 201, 114, 0.16);
+    --warning: #f0b445;
+    --warning-soft: rgba(240, 180, 69, 0.16);
+    --focus: #6ea2ff;
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-2: 0 10px 30px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.4);
+    --meter-bg: rgba(255, 255, 255, 0.12);
+    --scrim: rgba(0, 0, 0, 0.55);
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #1a1a1c;
+  --surface: #2a2a2d;
+  --surface-2: #343438;
+  --surface-hover: #3e3e43;
+  --border: rgba(255, 255, 255, 0.12);
+  --border-strong: rgba(255, 255, 255, 0.24);
+  --text: #f5f5f7;
+  --text-2: #b4b4bd;
+  --text-3: #9a9aa4;
+  --accent: #2f6fdd;
+  --accent-hover: #4a83e8;
+  --accent-soft: rgba(90, 148, 255, 0.18);
+  --danger: #ff6b61;
+  --danger-soft: rgba(255, 107, 97, 0.16);
+  --success: #4cc972;
+  --success-soft: rgba(76, 201, 114, 0.16);
+  --warning: #f0b445;
+  --warning-soft: rgba(240, 180, 69, 0.16);
+  --focus: #6ea2ff;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 10px 30px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.4);
+  --meter-bg: rgba(255, 255, 255, 0.12);
+  --scrim: rgba(0, 0, 0, 0.55);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur: 0ms;
+  }
+}

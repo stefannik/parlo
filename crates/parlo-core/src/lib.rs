@@ -16,3 +16,4 @@ pub mod store;
 pub mod stt;
 pub mod text;
 pub mod tts;
+pub mod logging;

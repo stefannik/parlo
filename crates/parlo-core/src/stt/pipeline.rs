@@ -6,7 +6,7 @@ use super::assemble::{Assembler, Paragraph, Seg};
 use super::checkpoint::{Checkpoint, ChunkRecord, JobMeta};
 use super::chunker::{build_chunks, ChunkParams};
 use super::engine::{LangGuess, SttEngine, TranscribeOpts};
-use super::filters::{analyze, collapse_repeats, should_drop_segment, should_transcribe};
+use super::filters::{analyze, collapse_repeats, normalize_peak, should_drop_segment, should_transcribe};
 use super::vad::{detect_file, SpeechDetector};
 use crate::audio::prepare::{prepare_audio, STT_RATE};
 use crate::audio::wav::PcmFile;
@@ -256,6 +256,7 @@ pub fn run_transcription(
                 if !should_transcribe(&analyze(&scratch)) {
                     continue;
                 }
+                normalize_peak(&mut scratch);
                 guesses.push(engine.detect_language(&scratch, job.threads)?);
             }
             let g = vote_language(&guesses).unwrap_or(LangGuess {
@@ -303,10 +304,11 @@ pub fn run_transcription(
                 (c.len() * STT_RATE as f64) as usize,
                 &mut scratch,
             )?;
-            let analysis = analyze(&scratch);
+            let analysis = analyze(&scratch); // on the *raw* level: tells silence from quiet speech
             let (segs, skipped) = if !should_transcribe(&analysis) {
                 (vec![], true)
             } else {
+                normalize_peak(&mut scratch); // quiet recordings reach the model at a sensible level
                 let opts = TranscribeOpts {
                     language: Some(language.clone()),
                     initial_prompt: if job.carry_prompt && !prev_tail.is_empty() {

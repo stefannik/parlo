@@ -1,0 +1,49 @@
+# Vendored + patched from pocket-tts 0.6.2 (MIT OR Apache-2.0), https://github.com/babybirdprd/pocket-tts
+# Patches (see PATCHES.md): offline-only weights loading (no hf-hub/ureq), no intel-mkl-src,
+# support for the pocket-tts 2.1.0 `english` weights (bos_before_voice, KV-cache voice states).
+[package]
+edition = "2024"
+name = "pocket-tts"
+version = "0.6.2-parlo"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[features]
+default = []
+quantized = []
+wasm = []
+metal = ["candle-core/metal", "candle-nn/metal"]
+accelerate = ["candle-core/accelerate", "candle-nn/accelerate"]
+
+[lib]
+name = "pocket_tts"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = "1.0"
+byteorder = "1.5"
+candle-core = "0.9.1"
+candle-nn = "0.9.1"
+candle-transformers = "0.9.1"
+hound = "3.5"
+lenient_semver = "0.4.2"
+memmap2 = "0.9"
+rand = "0.8"
+rand_distr = "0.4"
+rayon = "1.11.0"
+regex = "1"
+rubato = "0.14.1"
+safetensors = "0.5.2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+thiserror = "2.0"
+tokenizers = { version = "0.21.0", default-features = false, features = ["onig"] }
+tracing = "0.1"
+
+# Vendored upstream code: keep its style, but never let its lints fail our `clippy -D warnings`.
+[lints.rust]
+unused = "allow"
+unexpected_cfgs = "allow"
+[lints.clippy]
+all = { level = "allow", priority = -1 }

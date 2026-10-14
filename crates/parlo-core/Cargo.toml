@@ -6,13 +6,17 @@ license.workspace = true
 rust-version.workspace = true
 
 [features]
-default = ["cpal-input", "mp3", "whisper"]
+default = ["cpal-input", "mp3", "whisper", "tts-pocket"]
 # Real microphone capture through cpal (CoreAudio on macOS, ALSA on Linux).
 cpal-input = ["dep:cpal"]
 # MP3 export through LAME (LGPL; needs a C compiler at build time).
 mp3 = ["dep:mp3lame-encoder"]
 # whisper.cpp through whisper-rs (needs cmake + a C++ compiler at build time).
 whisper = ["dep:whisper-rs"]
+# PocketTTS through the vendored/patched Candle port (crates/pocket-tts).
+tts-pocket = ["dep:pocket-tts", "dep:candle-core"]
+# Metal for PocketTTS (macOS only; unverified, see docs/MAC_HANDOFF.md).
+tts-metal = ["tts-pocket", "pocket-tts/metal"]
 # Metal GPU backend for whisper.cpp (macOS only).
 whisper-metal = ["whisper", "whisper-rs/metal"]
 
@@ -33,6 +37,8 @@ libc = "0.2"
 mp3lame-encoder = { version = "0.2.5", optional = true }
 cpal = { version = "0.18", optional = true }
 whisper-rs = { version = "0.16", optional = true, features = ["tracing_backend"] }
+pocket-tts = { path = "../pocket-tts", optional = true }
+candle-core = { version = "0.9.1", optional = true }
 regex = "1"
 unicode-normalization = "0.1"
 unicode-segmentation = "1"

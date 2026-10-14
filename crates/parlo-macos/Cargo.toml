@@ -1,0 +1,22 @@
+[package]
+name = "parlo-macos"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "macOS implementations of the parlo-core platform traits (objc2). DRAFTED IN THE CLOUD, UNCHECKED ON A MAC."
+
+# Everything is gated by target_os, so the crate is empty (and compiles) on other platforms, and can be type-checked from
+# Linux with: cargo check --target aarch64-apple-darwin -p parlo-macos
+[dependencies]
+parlo-core = { path = "../parlo-core", default-features = false }
+tracing = "0.1"
+crossbeam-channel = "0.5"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+block2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSProcessInfo", "NSNotification", "NSOperation", "NSURL", "NSError", "NSArray", "NSDictionary", "NSValue", "NSData"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWorkspace"] }
+objc2-av-foundation = { version = "0.3", default-features = false, features = ["std", "AVCaptureDevice", "AVMediaFormat", "AVAsset", "AVAssetReader", "AVAssetReaderOutput", "AVAssetTrack"] }
+objc2-pdf-kit = { version = "0.3", default-features = false, features = ["std", "PDFDocument", "PDFPage"] }

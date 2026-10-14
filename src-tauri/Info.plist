@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Parlo records audio from your microphone to transcribe it on this Mac. Audio never leaves your computer.</string>
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key><string>Audio and video</string>
+      <key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>LSItemContentTypes</key>
+      <array><string>public.audio</string><string>public.movie</string></array>
+    </dict>
+    <dict>
+      <key>CFBundleTypeName</key><string>Documents</string>
+      <key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>LSItemContentTypes</key>
+      <array><string>public.plain-text</string><string>net.daringfireball.markdown</string><string>com.adobe.pdf</string><string>org.idpf.epub-container</string><string>org.openxmlformats.wordprocessingml.document</string></array>
+    </dict>
+  </array>
+</dict>
+</plist>

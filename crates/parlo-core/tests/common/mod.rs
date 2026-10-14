@@ -26,3 +26,21 @@ pub fn model(rel: &str) -> PathBuf {
     );
     p
 }
+
+/// Peak resident set size of this process in MB (portable: `getrusage`; Linux reports KB, macOS bytes).
+pub fn peak_rss_mb() -> f64 {
+    let mut ru: libc::rusage = unsafe { std::mem::zeroed() };
+    unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut ru) };
+    let v = ru.ru_maxrss as f64;
+    if cfg!(target_os = "macos") {
+        v / (1024.0 * 1024.0)
+    } else {
+        v / 1024.0
+    }
+}
+
+/// Current resident set size in MB (portable via `ps`).
+pub fn current_rss_mb() -> f64 {
+    let out = std::process::Command::new("ps").args(["-o", "rss=", "-p", &std::process::id().to_string()]).output().expect("ps");
+    String::from_utf8_lossy(&out.stdout).trim().parse::<f64>().unwrap_or(0.0) / 1024.0
+}
