@@ -12,3 +12,4 @@ pub mod platform;
 pub mod recorder;
 pub mod stt;
 pub mod text;
+pub mod tts;

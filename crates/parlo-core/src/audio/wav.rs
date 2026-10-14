@@ -72,6 +72,42 @@ impl WavWriter {
         })
     }
 
+    /// Re-open an existing Parlo WAV for appending, truncating it to exactly `frames` frames first (resume after a
+    /// crash: the manifest says how many frames were durably finished).
+    pub fn open_append(path: &Path, frames: u64) -> Result<Self> {
+        let info = repair_wav(path)?;
+        if frames > info.frames {
+            return Err(Error::State(format!(
+                "{} has {} frames, checkpoint expects {frames}",
+                path.display(),
+                info.frames
+            )));
+        }
+        let channels = info.channels;
+        let data_bytes = frames * 2 * channels as u64;
+        let mut f = OpenOptions::new()
+            .write(true)
+            .read(true)
+            .open(path)
+            .map_err(|e| Error::io(path, e))?;
+        f.set_len(HEADER_LEN + data_bytes)
+            .map_err(|e| Error::io(path, e))?;
+        use std::io::{Seek, SeekFrom};
+        f.seek(SeekFrom::End(0)).map_err(|e| Error::io(path, e))?;
+        let patch = f.try_clone().map_err(|e| Error::io(path, e))?;
+        let w = Self {
+            out: BufWriter::with_capacity(256 * 1024, f),
+            patch,
+            path: path.to_path_buf(),
+            channels,
+            sample_rate: info.sample_rate,
+            data_bytes,
+            synced_bytes: data_bytes,
+        };
+        w.patch_header()?;
+        Ok(w)
+    }
+
     pub fn path(&self) -> &Path {
         &self.path
     }
