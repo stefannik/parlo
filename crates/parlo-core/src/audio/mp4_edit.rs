@@ -103,10 +103,15 @@ pub fn audio_edit(path: &Path, track_id: u32) -> Option<EditInfo> {
         } else {
             u32::from_be_bytes([d[12], d[13], d[14], d[15]])
         } as f64;
-        let edts = tk.iter().find(|b| &b.kind == b"edts")?;
-        let elst = children(&mut f, edts)
-            .into_iter()
-            .find(|b| &b.kind == b"elst")?;
+        // No edit list (Apple's AAC encoder, iTunes files): the gapless info is the `iTunSMPB` tag instead.
+        let elst = tk.iter().find(|b| &b.kind == b"edts").and_then(|edts| {
+            children(&mut f, edts)
+                .into_iter()
+                .find(|b| &b.kind == b"elst")
+        });
+        let Some(elst) = elst else {
+            return itunsmpb(&mut f, moov, media_ts);
+        };
         let d = read_bytes(&mut f, elst.payload, (elst.end - elst.payload) as usize)?;
         let version = d[0];
         let n = u32::from_be_bytes([d[4], d[5], d[6], d[7]]) as usize;
@@ -153,4 +158,31 @@ pub fn audio_edit(path: &Path, track_id: u32) -> Option<EditInfo> {
         });
     }
     None
+}
+
+/// `iTunSMPB` ("0 priming padding valid_frames …", hex words) → skip/keep in seconds. Apple's AudioToolbox AAC encoder
+/// (our own M4A export) and iTunes-made files carry priming this way and have no `elst`.
+fn itunsmpb(f: &mut File, moov: &BoxHdr, rate: f64) -> Option<EditInfo> {
+    let len = (moov.end - moov.payload).min(64 << 20) as usize;
+    let d = read_bytes(f, moov.payload, len)?;
+    let at = d.windows(8).position(|w| w == b"iTunSMPB")?;
+    let tail = &d[at + 8..(at + 8 + 200).min(d.len())];
+    let text = String::from_utf8_lossy(tail);
+    // the value follows the `data` box header (type + locale = 8 bytes after "data"); find the " 00000000 " preamble
+    let start = text.find(" 0000000")?;
+    let words: Vec<u64> = text[start..]
+        .split_whitespace()
+        .take(4)
+        .filter_map(|w| {
+            u64::from_str_radix(w.trim_matches(|c: char| !c.is_ascii_hexdigit()), 16).ok()
+        })
+        .collect();
+    if words.len() < 4 || rate <= 0.0 {
+        return None;
+    }
+    let (priming, valid) = (words[1] as f64, words[3] as f64);
+    Some(EditInfo {
+        skip_s: priming / rate,
+        keep_s: (valid > 0.0).then_some(valid / rate),
+    })
 }

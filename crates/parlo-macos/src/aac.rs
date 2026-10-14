@@ -58,6 +58,7 @@ const K_EXT_AUDIO_FILE_PROPERTY_CLIENT_DATA_FORMAT: u32 = fourcc(b"cfmt");
 const K_EXT_AUDIO_FILE_PROPERTY_AUDIO_CONVERTER: u32 = fourcc(b"acnv");
 const K_EXT_AUDIO_FILE_PROPERTY_CONVERTER_CONFIG: u32 = fourcc(b"accf");
 const K_AUDIO_CONVERTER_ENCODE_BIT_RATE: u32 = fourcc(b"brat");
+const K_AUDIO_CONVERTER_APPLICABLE_ENCODE_BIT_RATES: u32 = fourcc(b"aebr");
 const K_AUDIO_FILE_FLAGS_ERASE_FILE: u32 = 1;
 
 #[link(name = "AudioToolbox", kind = "framework")]
@@ -88,6 +89,18 @@ unsafe extern "C" {
         data: *const AudioBufferList,
     ) -> OSStatus;
     fn ExtAudioFileDispose(file: ExtAudioFileRef) -> OSStatus;
+    fn AudioConverterGetPropertyInfo(
+        conv: AudioConverterRef,
+        property: u32,
+        size: *mut u32,
+        writable: *mut u8,
+    ) -> OSStatus;
+    fn AudioConverterGetProperty(
+        conv: AudioConverterRef,
+        property: u32,
+        size: *mut u32,
+        data: *mut c_void,
+    ) -> OSStatus;
     fn AudioConverterSetProperty(
         conv: AudioConverterRef,
         property: u32,
@@ -124,6 +137,42 @@ fn check(what: &str, status: OSStatus) -> Result<()> {
             "AudioToolbox {what} failed (OSStatus {status})"
         )))
     }
+}
+
+/// `kAudioConverterApplicableEncodeBitRates` → clamp `want` into the widest applicable [min, max] (unchanged if unknown).
+fn clamp_bit_rate(conv: AudioConverterRef, want: u32) -> u32 {
+    let mut size = 0u32;
+    let mut writable = 0u8;
+    let info = unsafe {
+        AudioConverterGetPropertyInfo(
+            conv,
+            K_AUDIO_CONVERTER_APPLICABLE_ENCODE_BIT_RATES,
+            &mut size,
+            &mut writable,
+        )
+    };
+    if info != 0 || size < 16 {
+        return want;
+    }
+    let mut ranges = vec![[0f64; 2]; size as usize / 16];
+    let got = unsafe {
+        AudioConverterGetProperty(
+            conv,
+            K_AUDIO_CONVERTER_APPLICABLE_ENCODE_BIT_RATES,
+            &mut size,
+            ranges.as_mut_ptr() as *mut c_void,
+        )
+    };
+    if got != 0 || ranges.is_empty() {
+        return want;
+    }
+    let lo = ranges.iter().map(|r| r[0]).fold(f64::MAX, f64::min);
+    let hi = ranges.iter().map(|r| r[1]).fold(0.0, f64::max);
+    let clamped = (want as f64).clamp(lo, hi) as u32;
+    if clamped != want {
+        tracing::info!("AAC bit rate {want} not applicable at this sample rate; using {clamped}");
+    }
+    clamped
 }
 
 pub struct AudioToolboxAac;
@@ -191,7 +240,8 @@ impl AacEncoder for AudioToolboxAac {
                 &mut conv as *mut _ as *mut c_void,
             )
         })?;
-        let bps: u32 = bitrate_kbps * 1000;
+        // AAC accepts only a sample-rate dependent range (e.g. 96 kbps mono is invalid at 22.05 kHz): clamp into it
+        let bps: u32 = clamp_bit_rate(conv, bitrate_kbps * 1000);
         check("set bit rate", unsafe {
             AudioConverterSetProperty(
                 conv,

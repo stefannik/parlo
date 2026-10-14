@@ -4110,6 +4110,8 @@ dependencies = [
  "objc2-foundation",
  "objc2-pdf-kit",
  "parlo-core",
+ "serde_json",
+ "tempfile",
  "tracing",
 ]
 

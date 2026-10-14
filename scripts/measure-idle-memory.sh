@@ -7,7 +7,7 @@
 #                                       [--shell-baseline]   (BRIEF §6.3: bundled *empty* shell, no models)
 # Attribution (documented method): WebKit helpers are XPC services whose *responsible PID* is the app. We read
 # `launchctl procinfo <pid>` ("responsible pid = N") for each com.apple.WebKit.* process. If that is unavailable
-# (needs privileges on some macOS versions) we fall back to process-set diffing: helpers that appeared after launch
+# (needs root on macOS 26 — the usual case, so set-diffing is the working method) we fall back to process-set diffing: helpers that appeared after launch
 # and were absent before it (run on an otherwise WebKit-quiet machine; close Safari/Mail first).
 # Output: one line per process + total, and a markdown row for docs/STATUS.md.
 set -euo pipefail
@@ -27,7 +27,8 @@ done
 command -v footprint >/dev/null || { echo "footprint(1) not found" >&2; exit 2; }
 [[ -d "$APP" ]] || { echo "app not found: $APP" >&2; exit 2; }
 
-BIN="$APP/Contents/MacOS/$(defaults read "$PWD/$APP/Contents/Info" CFBundleExecutable)"
+APP="$(cd "$(dirname "$APP")" && pwd)/$(basename "$APP")"
+BIN="$APP/Contents/MacOS/$(defaults read "$APP/Contents/Info" CFBundleExecutable)"
 webkit_pids() { pgrep -f 'com\.apple\.WebKit\.(WebContent|Networking|GPU)' || true; }
 
 BEFORE="$(webkit_pids | sort -n | tr '\n' ' ')"
@@ -59,7 +60,7 @@ if [[ ${#ATTRIBUTED[@]} -eq 0 && "$MODE" != "closed" ]]; then
 fi
 
 mb() {  # physical footprint in MB for a pid
-  footprint -p "$1" 2>/dev/null | awk '/Footprint:/ {v=$2; u=$3; if (u ~ /^KB/) v/=1024; else if (u ~ /^GB/) v*=1024; printf "%.1f", v; exit}'
+  footprint -p "$1" 2>/dev/null | awk '/Footprint: / {for(i=1;i<NF;i++) if($i=="Footprint:"){v=$(i+1); u=$(i+2)}; if (u ~ /^KB/) v/=1024; else if (u ~ /^GB/) v*=1024; else if (u ~ /^B/) v/=1048576; printf "%.1f", v; exit}'
 }
 TOTAL=0
 MAIN="$(mb "$APP_PID")"; TOTAL=$(awk -v a="$TOTAL" -v b="${MAIN:-0}" 'BEGIN{print a+b}')

@@ -22,3 +22,7 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["std
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWorkspace"] }
 objc2-av-foundation = { version = "0.3", default-features = false, features = ["std", "block2", "objc2-core-media", "AVCaptureDevice", "AVMediaFormat", "AVAsset", "AVAssetReader", "AVAssetReaderOutput", "AVAssetTrack"] }
 objc2-pdf-kit = { version = "0.3", default-features = false, features = ["std", "PDFDocument", "PDFPage"] }
+
+[dev-dependencies]
+tempfile = "3"
+serde_json = "1"
