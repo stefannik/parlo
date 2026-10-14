@@ -5,7 +5,7 @@ use crate::ipc::*;
 use crate::state::*;
 use parlo_core::audio::encode;
 use parlo_core::jobs::JobCtx;
-use parlo_core::platform::{AudioInput, DeviceSelector};
+use parlo_core::platform::DeviceSelector;
 use parlo_core::recorder::sidecar::{RecState, Sidecar};
 use parlo_core::recorder::{self, recovery, RecorderConfig, RecorderDeps, RecorderState, RecorderWarning};
 use parlo_core::store::{Settings, Workspace, WorkspaceTranscript, WorkspaceTts};
@@ -61,7 +61,13 @@ pub fn settings_get(state: S<'_>) -> SettingsDto {
 #[tauri::command]
 #[specta::specta]
 pub fn settings_update(state: S<'_>, patch: SettingsPatch) -> IpcResult<SettingsDto> {
-    let patch = serde_json::to_value(&patch).map_err(|e| IpcError::new("invalid", e.to_string()))?;
+    let mut patch = serde_json::to_value(&patch).map_err(|e| IpcError::new("invalid", e.to_string()))?;
+    // "" means "follow the system default input" (the DTO avoids Option<Option<_>>)
+    if let Some(o) = patch.as_object_mut() {
+        if o.get("input_device").and_then(|v| v.as_str()) == Some("") {
+            o.insert("input_device".into(), serde_json::Value::Null);
+        }
+    }
     let mut cur = state.settings.lock().unwrap();
     let next = cur.apply_patch(&patch)?;
     next.save(&state.paths)?;
@@ -737,11 +743,17 @@ pub fn workspace_get(app: AppHandle, state: S<'_>) -> WorkspaceDto {
 #[specta::specta]
 pub fn workspace_update(state: S<'_>, patch: WorkspacePatch) -> IpcResult<()> {
     let mut ws = state.workspace.lock().unwrap();
+    if patch.clear_transcript {
+        ws.transcript = None;
+    }
     if let Some(t) = patch.transcript {
-        ws.transcript = t.map(|t| WorkspaceTranscript { text: t.text, source_name: t.source_name, language: t.language, duration_s: t.duration_s, words: t.words as usize, edited: t.edited, exported_or_copied: t.exported_or_copied, recording_id: t.recording_id });
+        ws.transcript = Some(WorkspaceTranscript { text: t.text, source_name: t.source_name, language: t.language, duration_s: t.duration_s, words: t.words as usize, edited: t.edited, exported_or_copied: t.exported_or_copied, recording_id: t.recording_id });
+    }
+    if patch.clear_tts {
+        ws.tts = None;
     }
     if let Some(t) = patch.tts {
-        ws.tts = t.map(|t| WorkspaceTts { text: t.text, voice: t.voice, output_id: t.output_id, source_name: t.source_name });
+        ws.tts = Some(WorkspaceTts { text: t.text, voice: t.voice, output_id: t.output_id, source_name: t.source_name });
     }
     ws.save(&state.paths)?;
     Ok(())

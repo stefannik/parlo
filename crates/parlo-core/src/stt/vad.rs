@@ -51,6 +51,8 @@ pub fn detect_file(
             ((win_end - win_start) * rate) as usize,
             &mut buf,
         )?;
+        // Level the analysis copy so quiet speakers aren't below the VAD's fixed probability threshold.
+        super::filters::level_for_vad(&mut buf, pcm.sample_rate as usize);
         let spans = det.detect(&buf)?;
         for s in spans {
             let (a, b) = (s.start_s + win_start, s.end_s + win_start);

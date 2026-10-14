@@ -46,6 +46,7 @@ pub struct ModelFileInfo {
     pub name: String,
     pub path: String,
     pub present: bool,
+    #[specta(type = specta_typescript::Number)]
     pub size_bytes: u64,
 }
 
@@ -114,10 +115,9 @@ pub struct SettingsPatch {
     pub model_idle_timeout: Option<IdleUnload>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub performance: Option<Performance>,
-    /// `Some(None)` = follow the system default; `Some(Some(id))` = pin a device
-    #[serde(default, deserialize_with = "double_option", skip_serializing_if = "Option::is_none")]
-    #[specta(optional = nullable)]
-    pub input_device: Option<Option<String>>,
+    /// `""` = follow the system default; any other value pins that device id
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_device: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recording_retention: Option<Retention>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -128,14 +128,6 @@ pub struct SettingsPatch {
     pub default_speed: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tts_quality: Option<String>,
-}
-
-fn double_option<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    T: Deserialize<'de>,
-{
-    Ok(Some(Option::deserialize(d)?))
 }
 
 // ---------------------------------------------------------------------------------------------------- audio devices / mic
@@ -159,8 +151,10 @@ pub struct InputDeviceDto {
 // ---------------------------------------------------------------------------------------------------- recording
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct GapDto {
+    #[specta(type = specta_typescript::Number)]
     pub at_ms: u64,
     pub reason: String,
+    #[specta(type = specta_typescript::Number)]
     pub gap_ms: u64,
 }
 
@@ -169,6 +163,7 @@ pub struct RecordingInfoDto {
     pub id: String,
     pub wav_path: String,
     pub sample_rate: u32,
+    #[specta(type = specta_typescript::Number)]
     pub duration_ms: u64,
     pub started_at: String,
     pub state: String,
@@ -181,6 +176,7 @@ pub struct RecorderStateEvent {
     /// `idle` | `recording` | `paused`
     pub state: String,
     pub id: Option<String>,
+    #[specta(type = specta_typescript::Number)]
     pub elapsed_ms: u64,
     pub device: String,
     pub rms: f32,
@@ -194,8 +190,8 @@ pub enum RecorderWarningDto {
     DeviceChanged { from: String, to: String },
     PinnedDeviceLost { pinned: String, fallback: String },
     StreamRestarted { reason: String },
-    ResumedAfterSleep { gap_ms: u64 },
-    LowDisk { free_mb: u64 },
+    ResumedAfterSleep { #[specta(type = specta_typescript::Number)] gap_ms: u64 },
+    LowDisk { #[specta(type = specta_typescript::Number)] free_mb: u64 },
     SilentInput,
     Clipping,
     Stopped { reason: String },
@@ -213,6 +209,7 @@ pub struct ModelsStateEvent {
     pub engine: String,
     /// `unloaded` | `loading` | `ready`
     pub state: String,
+    #[specta(type = Option<specta_typescript::Number>)]
     pub unload_in_ms: Option<u64>,
 }
 
@@ -274,7 +271,7 @@ pub enum SttEventDto {
     Stage { stage: String },
     StageProgress { fraction: f64 },
     Language { code: String, prob: f32 },
-    Progress { done_s: f64, total_s: f64, eta_ms: Option<u64> },
+    Progress { done_s: f64, total_s: f64, #[specta(type = Option<specta_typescript::Number>)] eta_ms: Option<u64> },
     Paragraph { index: u32, text: String, start_s: f64, end_s: f64 },
     Done { transcript: TranscriptDto },
     Error { error: IpcError },
@@ -300,9 +297,9 @@ pub struct TtsRequest {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TtsEventDto {
     Stage { stage: String },
-    Progress { done_chars: u32, total_chars: u32, eta_ms: Option<u64> },
-    SegmentReady { index: u32, path: String, duration_ms: u64 },
-    Done { output_id: String, duration_ms: u64, segments: Vec<String>, cache_hit: bool },
+    Progress { done_chars: u32, total_chars: u32, #[specta(type = Option<specta_typescript::Number>)] eta_ms: Option<u64> },
+    SegmentReady { index: u32, path: String, #[specta(type = specta_typescript::Number)] duration_ms: u64 },
+    Done { output_id: String, #[specta(type = specta_typescript::Number)] duration_ms: u64, segments: Vec<String>, cache_hit: bool },
     Error { error: IpcError },
 }
 
@@ -374,6 +371,7 @@ pub struct WorkspaceTtsDto {
     pub source_name: Option<String>,
     /// segment paths of the current output (if it still exists), so the player can be rebuilt on launch
     pub segments: Vec<String>,
+    #[specta(type = Option<specta_typescript::Number>)]
     pub duration_ms: Option<u64>,
 }
 
@@ -385,19 +383,16 @@ pub struct WorkspaceDto {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Type)]
 pub struct WorkspacePatch {
-    /// `Some(None)` clears
-    #[serde(default, deserialize_with = "double_option")]
-    #[specta(optional = nullable)]
-    pub transcript: Option<Option<WorkspaceTranscriptDto>>,
-    #[serde(default, deserialize_with = "double_option")]
-    #[specta(optional = nullable)]
-    pub tts: Option<Option<WorkspaceTtsDto>>,
+    pub transcript: Option<WorkspaceTranscriptDto>,
+    pub tts: Option<WorkspaceTtsDto>,
+    pub clear_transcript: bool,
+    pub clear_tts: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RecoverableDto {
-    Recording { id: String, wav_path: String, duration_ms: u64, started_at: String },
+    Recording { id: String, wav_path: String, #[specta(type = specta_typescript::Number)] duration_ms: u64, started_at: String },
     SttJob { job_id: String, source_name: String },
     TtsJob { job_id: String, text_preview: String, voice: String },
 }

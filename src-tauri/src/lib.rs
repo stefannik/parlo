@@ -190,7 +190,7 @@ fn spawn_level_ticker(app: AppHandle, state: Arc<AppState>) {
 pub fn run() {
     let builder = specta_builder();
     #[cfg(debug_assertions)]
-    if let Err(e) = builder.export(specta_typescript::Typescript::default().bigint(specta_typescript::BigIntExportBehavior::Number), BINDINGS_PATH) {
+    if let Err(e) = builder.export(specta_typescript::Typescript::default(), BINDINGS_PATH) {
         eprintln!("could not export TypeScript bindings: {e}");
     }
 
@@ -271,7 +271,7 @@ mod tests {
     #[test]
     fn export_bindings() {
         super::specta_builder()
-            .export(specta_typescript::Typescript::default().bigint(specta_typescript::BigIntExportBehavior::Number), super::BINDINGS_PATH)
+            .export(specta_typescript::Typescript::default(), super::BINDINGS_PATH)
             .expect("export bindings");
     }
 }
