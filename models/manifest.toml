@@ -1,0 +1,149 @@
+# Parlo model manifest. Source of truth for scripts/fetch-models.sh and (later) the runtime ModelPaths resolver.
+# Every file: pinned revision, size and SHA-256 (verified on download). Never commit the files themselves.
+# `dest` is relative to models/. Groups are selectable: fetch-models.sh --only <group>[,<group>...].
+# Whisper/VAD hashes come from the HF LFS metadata of the pinned revision (re-verified on download).
+
+[meta]
+schema = 1
+generated = "2026-10-14"
+
+# ---------------------------------------------------------------- PocketTTS (BRIEF §3.2) ----
+# Laid out as a Hugging Face hub cache so the official `pocket-tts==2.1.0` Python reference loads offline:
+#   HF_HOME=models/pockettts/hf  HF_HUB_OFFLINE=1
+# Two snapshots: model+tokenizer at d29db79..., voice embeddings at e041936...
+[pockettts]
+repo = "kyutai/pocket-tts-without-voice-cloning"
+license = "CC-BY-4.0 (weights), MIT (code)"
+hf_cache_dir = "pockettts/hf/hub/models--kyutai--pocket-tts-without-voice-cloning"
+refs_main = "e041936c75475d350b405bc870bcf7c22da4e9e6"
+
+[[pockettts.file]]
+path = "languages/english/model.safetensors"
+revision = "d29db7978e464fb90cb3359ee0c69a273b9142cc"
+size = 219029196
+sha256 = "be9c6b4876d3f30740a8225dfcaa2e43dc4aeb753c15272735bee16bbb4abb0a"
+
+[[pockettts.file]]
+path = "languages/english/tokenizer.model"
+revision = "d29db7978e464fb90cb3359ee0c69a273b9142cc"
+size = 59339
+sha256 = "d461765ae179566678c93091c5fa6f2984c31bbe990bf1aa62d92c64d91bc3f6"
+
+[[pockettts.file]]
+path = "languages/english/embeddings/alba.safetensors"
+revision = "e041936c75475d350b405bc870bcf7c22da4e9e6"
+size = 6194424
+sha256 = "69c32db63ca56843d994f81f343f62e0bf2d73f7e4c9bc73e44bb1110b1d8845"
+
+[[pockettts.file]]
+path = "languages/english/embeddings/anna.safetensors"
+revision = "e041936c75475d350b405bc870bcf7c22da4e9e6"
+size = 7816440
+sha256 = "5ea82f78db006c9fd34e32ddd5aae82674b5b32646097977436458d00af80dfa"
+
+[[pockettts.file]]
+path = "languages/english/embeddings/charles.safetensors"
+revision = "e041936c75475d350b405bc870bcf7c22da4e9e6"
+size = 6194424
+sha256 = "299edc20182eeccfbf94e308626f259da4fbf339daa8d5905218f2b1774639b8"
+
+[[pockettts.file]]
+path = "languages/english/embeddings/cosette.safetensors"
+revision = "e041936c75475d350b405bc870bcf7c22da4e9e6"
+size = 6194424
+sha256 = "c4fdc15f5a3a20c44dd0064a37e87d15d25562936e8dbad7e07b9832015a545d"
+
+[[pockettts.file]]
+path = "languages/english/embeddings/george.safetensors"
+revision = "e041936c75475d350b405bc870bcf7c22da4e9e6"
+size = 6243576
+sha256 = "0c1c6c57c55a98d81254b33728150c7776f40647fe95258d1a6c1a02780b5d02"
+
+[[pockettts.file]]
+path = "languages/english/embeddings/jane.safetensors"
+revision = "e041936c75475d350b405bc870bcf7c22da4e9e6"
+size = 7374072
+sha256 = "37386227ca8ec5bf1b8e516c13d132ce5ff5437a304fe90129a1c62f41d9a008"
+
+[[pockettts.file]]
+path = "languages/english/embeddings/mary.safetensors"
+revision = "e041936c75475d350b405bc870bcf7c22da4e9e6"
+size = 6194424
+sha256 = "a8f2adf260cab966fe0a113d6b549d6efdeaa79de544ae0ff34b5b6a41445a59"
+
+[[pockettts.file]]
+path = "languages/english/embeddings/michael.safetensors"
+revision = "e041936c75475d350b405bc870bcf7c22da4e9e6"
+size = 7275768
+sha256 = "8937f724ac4719b9aa51ea0ba1f18f9de0af7a663ad6263558266c1a53c9722d"
+
+[[pockettts.file]]
+path = "languages/english/embeddings/paul.safetensors"
+revision = "e041936c75475d350b405bc870bcf7c22da4e9e6"
+size = 6980856
+sha256 = "ed7a019168f94dfe77009f1b0de59387abc6fbb0db954d38ce722ecb77da61aa"
+
+[[pockettts.file]]
+path = "languages/english/embeddings/vera.safetensors"
+revision = "e041936c75475d350b405bc870bcf7c22da4e9e6"
+size = 6735096
+sha256 = "4bf50ddd957b5d218b264fdcf18efbbc7384d12da3eca98ca19b9e8dd6976acc"
+
+# ---------------------------------------------------------------- Whisper GGML (BRIEF §6.2) ----
+[whisper]
+repo = "ggerganov/whisper.cpp"
+revision = "5359861c739e955e79d9a303bcbc70fb988958b1"
+license = "MIT"
+dest_dir = "whisper"
+
+[[whisper.file]]
+path = "ggml-large-v3-turbo-q5_0.bin"
+size = 574041195
+sha256 = "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2"
+
+[[whisper.file]]
+path = "ggml-large-v3-turbo-q8_0.bin"
+size = 874188075
+sha256 = "317eb69c11673c9de1e1f0d459b253999804ec71ac4c23c17ecf5fbe24e259a1"
+
+[[whisper.file]]
+path = "ggml-large-v3-turbo.bin"
+size = 1624555275
+sha256 = "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69"
+
+[[whisper.file]]
+path = "ggml-small.bin"
+size = 487601967
+sha256 = "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b"
+
+[[whisper.file]]
+path = "ggml-small-q8_0.bin"
+size = 264464607
+sha256 = "49c8fb02b65e6049d5fa6c04f81f53b867b5ec9540406812c643f177317f779f"
+
+# ---------------------------------------------------------------- Silero VAD GGML ----
+[vad]
+repo = "ggml-org/whisper-vad"
+revision = "9ffd54a1e1ee413ddf265af9913beaf518d1639b"
+license = "MIT (Silero VAD)"
+dest_dir = "vad"
+
+[[vad.file]]
+path = "ggml-silero-v5.1.2.bin"
+size = 885098
+sha256 = "29940d98d42b91fbd05ce489f3ecf7c72f0a42f027e4875919a28fb4c04ea2cf"
+
+[[vad.file]]
+path = "ggml-silero-v6.2.0.bin"
+size = 885098
+sha256 = "2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987"
+
+# ---------------------------------------------------------------- Fixtures (dev only) ----
+# FLEURS (CC-BY-4.0): a small subset is extracted by scripts/fleurs_subset.py from the pinned
+# parquet files using HTTP range reads (no full-file download). Output: fixtures/generated/fleurs/.
+[fleurs]
+repo = "google/fleurs"
+revision = "70bb2e84b976b7e960aa89f1c648e09c59f894dd"
+license = "CC-BY-4.0"
+per_language = 10
+languages = ["en_us", "de_de", "fr_fr", "es_419", "it_it", "bg_bg", "ru_ru", "pt_br"]
