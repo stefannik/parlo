@@ -22,6 +22,13 @@ if [[ "$(uname)" == "Linux" ]]; then
   if unshare -rn bash -c 'exec 3<>/dev/tcp/1.1.1.1/53' 2>/dev/null; then echo "FAIL: namespace has network" >&2; exit 1; fi
   unshare -rn bash -c "$(declare -f flows); CLI='$CLI'; flows"
   echo "OK: parlo-cli flows succeeded with no network"
+  # the Tauri app itself (if built): UI loads under the CSP and the startup IPC works with no network namespace
+  APP_BIN="${APP_BIN:-target/debug/parlo}"
+  if [[ -x "$APP_BIN" ]] && command -v xvfb-run >/dev/null; then
+    PARLO_SMOKE_HOLD_MS=300 unshare -rn scripts/smoke-linux.sh "$APP_BIN" | grep -q PARLO_SMOKE_OK && echo "OK: app smoke run succeeded with no network"
+  else
+    echo "(app smoke skipped: build it with cargo build -p parlo-app --features tauri/custom-protocol)"
+  fi
 else
   [[ -n "$APP" ]] || { echo "macOS: pass --app dist/Parlo.app" >&2; exit 2; }
   CSP="$(grep -o 'default-src[^"]*' src-tauri/tauri.conf.json | head -1 || true)"
