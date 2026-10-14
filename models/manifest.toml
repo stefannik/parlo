@@ -147,3 +147,16 @@ revision = "70bb2e84b976b7e960aa89f1c648e09c59f894dd"
 license = "CC-BY-4.0"
 per_language = 10
 languages = ["en_us", "de_de", "fr_fr", "es_419", "it_it", "bg_bg", "ru_ru", "pt_br"]
+
+# ---------------------------------------------------------------- Dev-only evaluation models ----
+# Speaker-embedding model for the TTS parity "voice identity" metric (cosine similarity). Never shipped.
+[eval]
+repo = "Wespeaker/wespeaker-voxceleb-resnet34-LM"
+revision = "f0c48c298fd835726c27956a5d617bad7115627e"
+license = "Apache-2.0 (code); VoxCeleb-trained"
+dest_dir = "eval"
+
+[[eval.file]]
+path = "voxceleb_resnet34_LM.onnx"
+size = 26530309
+sha256 = "7bb2f06e9df17cdf1ef14ee8a15ab08ed28e8d0ef5054ee135741560df2ec068"

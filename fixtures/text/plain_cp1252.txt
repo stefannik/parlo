@@ -1,0 +1,5 @@
+Parlo reads text aloud.
+
+It handles accents like café, naïve, and Zürich; quotes “like these” and ‘these’; dashes — long and – short; and the euro sign (€5).
+
+Second paragraph: numbers 1,250.75 and dates like 3rd of March.
