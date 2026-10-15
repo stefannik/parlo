@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <key>LSEnvironment</key>
+  <dict><key>MallocLargeCache</key><string>0</string></dict>
   <key>NSMicrophoneUsageDescription</key>
   <string>Parlo records audio from your microphone to transcribe it on this Mac. Audio never leaves your computer.</string>
   <key>CFBundleDocumentTypes</key>

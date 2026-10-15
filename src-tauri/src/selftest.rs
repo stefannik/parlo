@@ -501,7 +501,10 @@ fn mic_script(app: &AppHandle, say: &dyn Fn(&str)) -> R<()> {
         c::recording_start(app.clone(), st_of(app), None),
         "recording_start",
     )?;
-    say(&format!("recording on {:?} at {} Hz", info.device, info.sample_rate));
+    say(&format!(
+        "recording on {:?} at {} Hz",
+        info.device, info.sample_rate
+    ));
     std::thread::sleep(Duration::from_secs(2));
     let during = String::from_utf8_lossy(
         &std::process::Command::new("pmset")
@@ -519,9 +522,15 @@ fn mic_script(app: &AppHandle, say: &dyn Fn(&str)) -> R<()> {
         format!("no sleep assertion held while recording:\n{during}"),
     )?;
     say("power assertion held while recording (pmset -g assertions)");
-    ipc(c::recording_pause(app.clone(), st_of(app)), "recording_pause")?;
+    ipc(
+        c::recording_pause(app.clone(), st_of(app)),
+        "recording_pause",
+    )?;
     std::thread::sleep(Duration::from_secs(1));
-    ipc(c::recording_resume(app.clone(), st_of(app)), "recording_resume")?;
+    ipc(
+        c::recording_resume(app.clone(), st_of(app)),
+        "recording_resume",
+    )?;
     std::thread::sleep(Duration::from_secs(secs.saturating_sub(3).max(1)));
     let out = ipc(c::recording_stop(app.clone(), st_of(app)), "recording_stop")?;
     let wall_ms = t0.elapsed().as_millis() as i64;
@@ -543,9 +552,15 @@ fn mic_script(app: &AppHandle, say: &dyn Fn(&str)) -> R<()> {
     let expect_ms = wall_ms - 1000;
     ensure(
         (out.duration_ms as i64 - expect_ms).abs() < 1500,
-        format!("duration {} ms vs expected ≈{expect_ms} ms", out.duration_ms),
+        format!(
+            "duration {} ms vs expected ≈{expect_ms} ms",
+            out.duration_ms
+        ),
     )?;
-    ensure(peak > 0.0, "the recording is digital silence (muted mic or no permission?)")?;
+    ensure(
+        peak > 0.0,
+        "the recording is digital silence (muted mic or no permission?)",
+    )?;
     // after the stop the assertion must be released
     std::thread::sleep(Duration::from_millis(500));
     let after = String::from_utf8_lossy(
@@ -576,6 +591,9 @@ fn lifecycle_script(app: &AppHandle, say: &dyn Fn(&str)) -> R<()> {
         let _ = std::io::stdout().flush();
         std::thread::sleep(Duration::from_secs(wait_s));
     };
+    if let Ok(only) = std::env::var("PARLO_LC_ONLY") {
+        return lc_isolated(app, &only);
+    }
     phase("open", 20);
     let w = app
         .get_webview_window("main")
@@ -647,7 +665,11 @@ fn lifecycle_script(app: &AppHandle, say: &dyn Fn(&str)) -> R<()> {
     phase("job-done", 3);
     let loaded = |tag: &str| {
         let st = st_of(app);
-        println!("LOADED {tag} stt={} tts={}", st.stt.is_loaded(), st.tts.is_loaded());
+        println!(
+            "LOADED {tag} stt={} tts={}",
+            st.stt.is_loaded(),
+            st.tts.is_loaded()
+        );
     };
     loaded("job-done");
     phase("after-job", wait / 2);
@@ -655,6 +677,88 @@ fn lifecycle_script(app: &AppHandle, say: &dyn Fn(&str)) -> R<()> {
     std::thread::sleep(Duration::from_secs(wait - wait / 2));
     loaded("end");
     say("lifecycle complete");
+    Ok(())
+}
+
+/// Experiment: one engine only, unload immediately, print RSS at each step (memory-return investigation).
+fn lc_isolated(app: &AppHandle, only: &str) -> R<()> {
+    use parlo_core::models::IdleTimeout;
+    let rss = || {
+        String::from_utf8_lossy(
+            &std::process::Command::new("ps")
+                .args(["-o", "rss=", "-p", &std::process::id().to_string()])
+                .output()
+                .map(|o| o.stdout)
+                .unwrap_or_default(),
+        )
+        .trim()
+        .parse::<u64>()
+        .unwrap_or(0)
+            / 1024
+    };
+    let st = st_of(app);
+    println!("ISO baseline rss {} MB", rss());
+    st.host.set_idle_timeout(IdleTimeout::Immediately);
+    if only == "tts" {
+        let (ch, rx) = channel::<TtsEventDto>();
+        ipc(
+            c::tts_start(
+                app.clone(),
+                st_of(app),
+                TtsRequest {
+                    source: TtsSource::Text {
+                        text: "Hello from the isolated memory test. This is a short sentence."
+                            .into(),
+                    },
+                    voice: "george".into(),
+                    quality: "fast".into(),
+                },
+                ch,
+            ),
+            "tts_start",
+        )?;
+        drain_tts(&rx, None)?;
+    } else {
+        let (ch, rx) = channel::<SttEventDto>();
+        ipc(
+            c::transcribe_start(
+                app.clone(),
+                st_of(app),
+                TranscribeRequest {
+                    source: SttSource::Path {
+                        path: std::path::Path::new("fixtures/generated/synth/en_all.wav")
+                            .canonicalize()
+                            .map_err(|e| e.to_string())?
+                            .display()
+                            .to_string(),
+                    },
+                    language: "auto".into(),
+                },
+                ch,
+            ),
+            "transcribe_start",
+        )?;
+        loop {
+            match rx
+                .recv_timeout(Duration::from_secs(600))
+                .map_err(|e| e.to_string())?
+            {
+                SttEventDto::Done { .. } => break,
+                SttEventDto::Error { error } => return Err(error.message),
+                _ => {}
+            }
+        }
+    }
+    for i in 0..4 {
+        std::thread::sleep(Duration::from_secs(2));
+        println!(
+            "ISO {only} +{}s: rss {} MB, stt_loaded={} tts_loaded={}",
+            (i + 1) * 2,
+            rss(),
+            st.stt.is_loaded(),
+            st.tts.is_loaded()
+        );
+    }
     Ok(())
 }
 
