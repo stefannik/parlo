@@ -59,6 +59,9 @@ Everything that still needs macOS (A: gates incl. Metal & real recorder, B: plat
 
 ---
 
+# Update 2026-10-15 (evening) — new TTS weights, 21 English voices + Spanish
+Shipped in `dist/Parlo.app` / `/Applications`: English `english_2026-09` (the weights the owner chose in the blind test; NOT 09_2, which truncates digits — DECISIONS C-020), 21 English voices + Spanish (Lola), temperature 0.3, quality Standard = 1 sampler step / "Higher" = 4. Parity vs pocket-tts 3.3.0 (same files, Whisper-turbo round trip): English WER 5.08 % (Python) vs 5.53 % (Rust) over 28 clips (24 plain clips 0.06 % vs 0.17 %), digit-heavy text n=21 voices 46.2 % vs 48.5 %, duration ratio 1.02–1.05; Spanish n=3 10.0 % vs 11.7 %. TTS speed/memory unchanged (RTF ≈ 0.1, peak ≈ 660 MB; after-job +25 MB, window open 75 MB / closed 43 MB). Bundle 1.4 GB. Owner fixes shipped earlier the same day (C-019).
+
 # Mac session 1 (2026-10-15, M4 Pro 48 GB / macOS 26.4.1) — nearly done; UI/AirPods/lid/pressure items need the owner
 
 Commit at last update: see `git log` (final docs commit). Hardware: Apple M4 Pro, 48 GB.

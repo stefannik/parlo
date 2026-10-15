@@ -261,6 +261,8 @@ export type TtsSource = { kind: "text"; text: string } | { kind: "import"; impor
 export type VoiceDto = {
 	id: string,
 	label: string,
+	/**  ISO-639-1 language the voice speaks (`en`, `es`) */
+	language: string,
 	/**  absolute path of the bundled preview clip (play with the asset protocol), if present */
 	preview_path: string | null,
 };

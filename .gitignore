@@ -20,3 +20,6 @@ spike/**/Cargo.lock.bak
 spike/tts-parity/logs/
 spike/stt-bench/data/
 spike/stt-bench/tmp/
+
+# dev-only Hugging Face cache of the TTS comparison spike (GBs of weights)
+spike/tts-new/hf/

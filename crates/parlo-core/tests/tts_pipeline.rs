@@ -42,10 +42,12 @@ impl TtsEngine for ToneEngine {
             VoiceInfo {
                 id: "george".into(),
                 label: "George".into(),
+                language: "en".into(),
             },
             VoiceInfo {
                 id: "alba".into(),
                 label: "Alba".into(),
+                language: "en".into(),
             },
         ]
     }
@@ -256,7 +258,7 @@ fn identical_request_is_an_instant_cache_hit_and_any_change_misses() {
         first.output_id
     );
     let mut j = job(dir.path(), blocks.clone());
-    j.quality = Quality::Fast;
+    j.quality = Quality::High;
     assert_ne!(
         run_tts(&j, &mut eng, &mut |_: TtsEvent| {}, &AtomicBool::new(false))
             .unwrap()

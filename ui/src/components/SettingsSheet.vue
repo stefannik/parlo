@@ -204,7 +204,7 @@ function pick<T extends string>(e: Event): T {
                 <label for="s-quality">Quality</label>
                 <select id="s-quality" :value="app.settings.tts_quality" @change="app.updateSettings({ tts_quality: pick($event) })">
                   <option value="standard">Standard</option>
-                  <option value="fast">Fast</option>
+                  <option value="high">Higher (slower)</option>
                 </select>
               </div>
             </div>

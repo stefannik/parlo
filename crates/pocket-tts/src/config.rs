@@ -101,9 +101,24 @@ pub struct MimiConfig {
     pub weights_path: Option<String>,
 }
 
+fn default_true() -> bool {
+    true
+}
+
 /// Root configuration
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
+    /// Parlo patch (pocket-tts 3.x text preparation): per-character rewrites before tokenization ("" deletes).
+    #[serde(default)]
+    pub replace_characters: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    pub pad_with_spaces_for_short_inputs: bool,
+    #[serde(default)]
+    pub remove_semicolons: bool,
+    #[serde(default = "default_true")]
+    pub append_terminal_punctuation: bool,
+    #[serde(default = "default_true")]
+    pub capitalize_first_letter: bool,
     pub flow_lm: FlowLMConfig,
     pub mimi: MimiConfig,
     #[serde(default)]

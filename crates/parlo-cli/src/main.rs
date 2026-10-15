@@ -490,20 +490,23 @@ fn speak(
         "[load] speech model ready in {:.2}s",
         t_load.elapsed().as_secs_f64()
     );
-    let q = if quality == "fast" {
-        Quality::Fast
-    } else {
-        Quality::Standard
-    };
+    let q = Quality::parse(&quality);
     let cancel = AtomicBool::new(false);
     if previews {
         let dir = mp.previews_dir();
         std::fs::create_dir_all(&dir)?;
         for v in engine.voices() {
-            let sentence = format!(
-                "Hello, I'm {}. This is how I sound when I read your text aloud.",
-                v.label
-            );
+            let sentence = if v.language == "es" {
+                format!(
+                    "Hola, soy {}. Así sueno cuando leo tu texto en voz alta.",
+                    v.label
+                )
+            } else {
+                format!(
+                    "Hello, I'm {}. This is how I sound when I read your text aloud.",
+                    v.label
+                )
+            };
             let job = TtsJob {
                 blocks: parlo_core::text::text_to_blocks(&sentence),
                 voice: v.id.clone(),

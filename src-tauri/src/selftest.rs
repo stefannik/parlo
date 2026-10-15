@@ -129,7 +129,8 @@ fn script(app: &AppHandle, state: &Arc<AppState>, say: &dyn Fn(&str)) -> R<()> {
     // --- voices + workspace ---------------------------------------------------------------------------------------
     let voices = c::voices_list(st());
     ensure(
-        voices.len() == 10
+        voices.len() == 22
+            && voices.iter().filter(|v| v.language == "es").count() == 1
             && voices
                 .iter()
                 .any(|v| v.id == "george" && v.label == "George"),
@@ -183,7 +184,7 @@ fn script(app: &AppHandle, state: &Arc<AppState>, say: &dyn Fn(&str)) -> R<()> {
         c::workspace_get(app.clone(), st()).tts.is_none(),
         "workspace clear",
     )?;
-    say("voices (10, incl. George) and workspace round-trip");
+    say("voices (22: 21 English incl. George + Spanish Lola) and workspace round-trip");
 
     // --- text import ----------------------------------------------------------------------------------------------
     let doc = std::path::Path::new("fixtures/text").join("headers_hyphens.pdf");

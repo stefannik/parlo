@@ -1,6 +1,6 @@
 # Parlo
 
-A fully local macOS app: **speech → text** (audio/video files and long microphone recordings, multilingual) and **text → speech** (English, Kyutai PocketTTS). Tauri v2 (Rust) + Vue 3. After the models are installed it never touches the network.
+A fully local macOS app: **speech → text** (audio/video files and long microphone recordings, multilingual) and **text → speech** (21 English voices + Spanish, Kyutai PocketTTS). Tauri v2 (Rust) + Vue 3. After the models are installed it never touches the network.
 
 ![Parlo, Transcribe tab](docs/screenshots/transcribe-result.light.png)
 
@@ -62,7 +62,7 @@ stable across builds.
 | `~/Library/Application Support/Parlo/` | `settings.json`, `workspace.json`, `recordings/` (never auto-deleted), `outputs/` (generated speech, cleanable in Settings), `jobs/<id>/` (checkpoints) |
 | `~/Library/Caches/Parlo/` | temporary decoded audio — safe to delete |
 | `~/Library/Logs/Parlo/` | rotating local logs |
-| `Parlo.app/Contents/Resources/models/` | Whisper large-v3-turbo q8_0, Silero VAD, PocketTTS + 10 voices (`models/` in a dev checkout) |
+| `Parlo.app/Contents/Resources/models/` | Whisper large-v3-turbo q8_0, Silero VAD, PocketTTS English + Spanish models with 22 voices (`models/` in a dev checkout) |
 `PARLO_HOME=<dir>` redirects all three user directories (tests, self-tests).
 
 ## Tests, self-tests and benchmarks

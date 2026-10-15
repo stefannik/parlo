@@ -118,12 +118,16 @@ describe('mock backend contract', () => {
     expect(await run('george')).not.toBe(await run('alba'))
   })
 
-  it('voices: the ten English voices (George among them), no phantom ctric voices', async () => {
+  it('voices: 21 English voices (George among them) + the Spanish voice, each tagged with its language, no duplicates', async () => {
     const { backend } = setup()
     const v = await backend.voices()
-    expect(v).toHaveLength(10)
+    expect(v).toHaveLength(22)
+    expect(new Set(v.map((x) => x.id)).size).toBe(22)
+    expect(v.filter((x) => x.language === 'en')).toHaveLength(21)
+    expect(v.filter((x) => x.language === 'es').map((x) => x.id)).toEqual(['lola'])
     expect(v.map((x) => x.id)).toContain('george')
-    expect(v.map((x) => x.id)).not.toContain('bill_boerst')
+    // the owner's favourites from the old ten are still there
+    for (const id of ['alba', 'anna', 'charles', 'cosette', 'jane', 'mary', 'michael', 'paul', 'vera']) expect(v.map((x) => x.id)).toContain(id)
   })
 
   it('import returns text + metadata and importFull returns the text', async () => {

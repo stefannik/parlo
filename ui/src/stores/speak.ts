@@ -31,6 +31,8 @@ export const useSpeakStore = defineStore('speak', () => {
   const imported = ref<ImportResultDto | null>(null)
   const voices = ref<VoiceDto[]>([])
   const voice = ref('george')
+  const voiceLanguage = computed(() => voices.value.find((v) => v.id === voice.value)?.language ?? 'en')
+  const voiceLanguageName = computed(() => (({ en: 'English', es: 'Spanish' }) as Record<string, string>)[voiceLanguage.value] ?? voiceLanguage.value)
   const speed = ref(1)
   const quality = ref('standard')
   const phase = ref<SpeakPhase>('compose')
@@ -241,6 +243,8 @@ export const useSpeakStore = defineStore('speak', () => {
     imported,
     voices,
     voice,
+    voiceLanguage,
+    voiceLanguageName,
     speed,
     quality,
     phase,

@@ -6,23 +6,31 @@ use std::sync::atomic::AtomicBool;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Quality {
-    /// `lsd_decode_steps = 4` — ctric parity (default)
+    /// Kyutai's default: one sampler step (what the 2026-09 weights were evaluated with)
     Standard,
-    /// `lsd_decode_steps = 1`
-    Fast,
+    /// four sampler steps (ctric's old setting): slower, not measurably better in our listening tests
+    High,
 }
 
 impl Quality {
     pub fn lsd_decode_steps(self) -> usize {
         match self {
-            Quality::Standard => 4,
-            Quality::Fast => 1,
+            Quality::Standard => 1,
+            Quality::High => 4,
         }
     }
     pub fn as_str(self) -> &'static str {
         match self {
             Quality::Standard => "standard",
-            Quality::Fast => "fast",
+            Quality::High => "high",
+        }
+    }
+    /// Settings/IPC string → quality (`"fast"` is the legacy name of the cheap setting = Standard).
+    pub fn parse(s: &str) -> Self {
+        if s == "high" {
+            Quality::High
+        } else {
+            Quality::Standard
         }
     }
 }
@@ -31,6 +39,8 @@ impl Quality {
 pub struct VoiceInfo {
     pub id: String,
     pub label: String,
+    /// ISO-639-1 language the voice speaks (`en`, `es`)
+    pub language: String,
 }
 
 pub trait TtsEngine: Send {

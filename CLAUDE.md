@@ -1,6 +1,6 @@
 # Parlo
 
-Fully local macOS app: speech→text (files + long mic recordings, multilingual) and text→speech (English, PocketTTS). Tauri v2 (Rust) + Vue 3 (Composition API, TypeScript). No network at runtime.
+Fully local macOS app: speech→text (files + long mic recordings, multilingual) and text→speech (English + Spanish, PocketTTS). Tauri v2 (Rust) + Vue 3 (Composition API, TypeScript). No network at runtime.
 
 ## Read first
 1. `docs/STATUS.md` — current state, next steps, "Needs owner" (if it exists, you are resuming).

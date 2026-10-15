@@ -46,18 +46,30 @@ export interface MockControl {
   options: MockOptions
 }
 
-// same order as the real engine (alphabetical by id)
-const VOICES: Array<[string, string]> = [
-  ['alba', 'Alba'],
-  ['anna', 'Anna'],
-  ['charles', 'Charles'],
-  ['cosette', 'Cosette'],
-  ['george', 'George'],
-  ['jane', 'Jane'],
-  ['mary', 'Mary'],
-  ['michael', 'Michael'],
-  ['paul', 'Paul'],
-  ['vera', 'Vera'],
+// same order as the real engine (English voices alphabetical by id, then Spanish)
+const VOICES: Array<[string, string, string]> = [
+  ['alba', 'Alba', 'en'],
+  ['anna', 'Anna', 'en'],
+  ['azelma', 'Azelma', 'en'],
+  ['bill_boerst', 'Bill Boerst', 'en'],
+  ['caro_davy', 'Caro Davy', 'en'],
+  ['charles', 'Charles', 'en'],
+  ['cosette', 'Cosette', 'en'],
+  ['eponine', 'Eponine', 'en'],
+  ['eve', 'Eve', 'en'],
+  ['fantine', 'Fantine', 'en'],
+  ['george', 'George', 'en'],
+  ['jane', 'Jane', 'en'],
+  ['javert', 'Javert', 'en'],
+  ['jean', 'Jean', 'en'],
+  ['marius', 'Marius', 'en'],
+  ['mary', 'Mary', 'en'],
+  ['michael', 'Michael', 'en'],
+  ['paul', 'Paul', 'en'],
+  ['peter_yearsley', 'Peter Yearsley', 'en'],
+  ['stuart_bell', 'Stuart Bell', 'en'],
+  ['vera', 'Vera', 'en'],
+  ['lola', 'Lola', 'es'],
 ]
 
 const SAMPLE_PARAGRAPHS = [
@@ -389,7 +401,7 @@ export class MockBackend implements Backend {
 
   // ------------------------------------------------------------------------------------------------------ TTS
   async voices(): Promise<VoiceDto[]> {
-    return VOICES.map(([id, label]) => ({ id, label, preview_path: `/mock/previews/${id}.mp3` }))
+    return VOICES.map(([id, label, language]) => ({ id, label, language, preview_path: `/mock/previews/${id}.mp3` }))
   }
   async tts(req: TtsRequest, onEvent: (e: TtsEventDto) => void) {
     const job = this.nextJob++

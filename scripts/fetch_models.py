@@ -31,9 +31,8 @@ def entries(man, groups):
         for f in sec.get("file", []):
             rev = f.get("revision", sec.get("revision"))
             url = f"{HF}/{sec['repo']}/resolve/{rev}/{f['path']}"
-            if g == "pockettts":
-                base = MODELS / sec["hf_cache_dir"] / "snapshots" / rev
-                dest = base / f["path"]
+            if "dest" in f:  # explicit destination under dest_dir (PocketTTS per-language layout)
+                dest = MODELS / sec["dest_dir"] / f["dest"]
             else:
                 dest = MODELS / sec["dest_dir"] / Path(f["path"]).name
             yield g, url, dest, f["size"], f["sha256"]
@@ -70,13 +69,6 @@ def fetch(url: str, dest: Path, size: int, sha: str) -> bool:
     return True
 
 
-def write_refs(man):
-    sec = man["pockettts"]
-    refs = MODELS / sec["hf_cache_dir"] / "refs"
-    refs.mkdir(parents=True, exist_ok=True)
-    (refs / "main").write_text(sec["refs_main"])
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", default="pockettts,whisper,vad")
@@ -111,8 +103,6 @@ def main():
         else:
             print(f"FAILED  {rel}")
             bad += 1
-    if "pockettts" in groups and not a.list:
-        write_refs(man)
     sys.exit(1 if bad else 0)
 
 

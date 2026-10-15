@@ -54,7 +54,56 @@ pub struct TTSModel {
     pub ldim: usize,
     /// Device
     pub device: Device,
+    /// Parlo patch: text preparation of pocket-tts 3.x (per-language config).
+    pub text_prep: TextPrep,
 }
+
+/// Text preparation settings from the model config (`pocket_tts/models/text_chunking.py`).
+#[derive(Clone, Debug)]
+pub struct TextPrep {
+    pub replace_characters: std::collections::HashMap<char, String>,
+    pub pad_with_spaces_for_short_inputs: bool,
+    pub remove_semicolons: bool,
+    pub append_terminal_punctuation: bool,
+    pub capitalize_first_letter: bool,
+}
+
+impl Default for TextPrep {
+    fn default() -> Self {
+        Self {
+            replace_characters: Default::default(),
+            pad_with_spaces_for_short_inputs: false,
+            remove_semicolons: false,
+            append_terminal_punctuation: true,
+            capitalize_first_letter: true,
+        }
+    }
+}
+
+impl TextPrep {
+    fn from_config(c: &Config) -> Self {
+        Self {
+            replace_characters: c
+                .replace_characters
+                .iter()
+                .filter_map(|(k, v)| {
+                    let mut it = k.chars();
+                    match (it.next(), it.next()) {
+                        (Some(ch), None) => Some((ch, v.clone())),
+                        _ => None,
+                    }
+                })
+                .collect(),
+            pad_with_spaces_for_short_inputs: c.pad_with_spaces_for_short_inputs,
+            remove_semicolons: c.remove_semicolons,
+            append_terminal_punctuation: c.append_terminal_punctuation,
+            capitalize_first_letter: c.capitalize_first_letter,
+        }
+    }
+}
+
+/// Minimum number of generated frames before an EOS is honoured (Python `_MIN_FRAMES_BEFORE_EOS`).
+const MIN_FRAMES_BEFORE_EOS: usize = 6;
 
 impl TTSModel {
     /// Load a pre-trained TTS model from HuggingFace
@@ -337,6 +386,7 @@ impl TTSModel {
         vb: VarBuilder,
     ) -> Result<Self> {
         let device = vb.device().clone();
+        let text_prep = TextPrep::from_config(&config);
 
         // Build FlowLM components
         let dim = config.flow_lm.transformer.d_model;
@@ -480,6 +530,7 @@ impl TTSModel {
             dim,
             ldim,
             device,
+            text_prep,
         })
     }
 
@@ -658,7 +709,7 @@ impl TTSModel {
 
     /// Parlo patch: port of Python 2.1.0 `split_into_best_sentences` (token-boundary based, max 50 tokens).
     pub fn split_chunks_py(&self, text: &str, max_tokens: usize) -> Result<Vec<String>> {
-        let (prepared, _) = prepare_text_prompt_py(text);
+        let (prepared, _) = prepare_text_prompt_cfg(text, &self.text_prep);
         let prepared = prepared.trim().to_string();
         let tokens = self.conditioner.encode_ids(&prepared)?;
         let eos_ids: Vec<u32> = self
@@ -680,7 +731,24 @@ impl TTSModel {
             }
             Ok(v)
         };
-        let nb = segments(&tokens, &find_boundary_indices(&tokens, &eos_ids))?;
+        let mut bounds = find_boundary_indices(&tokens, &eos_ids);
+        // Python `skip_decimal_periods=True`: never split after the "." of a decimal number ("3.5")
+        let mut kept = vec![bounds[0]];
+        for &b in &bounds[1..bounds.len() - 1] {
+            let prefix = self.conditioner.decode_ids(&tokens[..b])?;
+            let suffix = self.conditioner.decode_ids(&tokens[b..])?;
+            let pc: Vec<char> = prefix.chars().collect();
+            let decimal = pc.len() >= 2
+                && pc[pc.len() - 1] == '.'
+                && pc[pc.len() - 2].is_ascii_digit()
+                && suffix.chars().next().is_some_and(|c| c.is_ascii_digit());
+            if !decimal {
+                kept.push(b);
+            }
+        }
+        kept.push(*bounds.last().unwrap());
+        bounds = kept;
+        let nb = segments(&tokens, &bounds)?;
         let mut refined: Vec<(usize, String)> = Vec::new();
         for (n, text) in nb {
             if n <= max_tokens {
@@ -1061,8 +1129,8 @@ impl TTSModel {
         voice_state: &ModelState,
     ) -> Box<dyn Iterator<Item = Result<Tensor>> + Send + 'static> {
         let mut state = voice_state.clone();
-        // Python: the chunk (already prepared as part of the whole text) goes to the tokenizer as is.
-        let prepared_text = text.clone();
+        // pocket-tts 3.x: every chunk is prepared again (capitalisation, terminal punctuation) before tokenizing.
+        let (prepared_text, frames_guess) = prepare_text_prompt_cfg(&text, &self.text_prep);
         let tokens = match self.conditioner.prepare(&prepared_text, &self.device) {
             Ok(t) => t,
             Err(e) => return Box::new(std::iter::once(Err(e))),
@@ -1083,7 +1151,7 @@ impl TTSModel {
         // Python: ceil((tokens / 3.0 + 2.0) * frame_rate); frames_after_eos = guess + 2.
         let token_count = tokens.dims()[1];
         let max_gen_len = ((token_count as f64 / 3.0 + 2.0) * 12.5).ceil() as usize;
-        let frames_after_eos = prepare_text_prompt_py(&text).1 + 2;
+        let frames_after_eos = frames_guess + 2;
         let mut backbone_input = match self.flow_lm.bos_emb.clone().reshape((1, 1, self.ldim)) {
             Ok(t) => t,
             Err(e) => return Box::new(std::iter::once(Err(anyhow::Error::from(e)))),
@@ -1131,7 +1199,7 @@ impl TTSModel {
             };
             PROF_FLOW_NS.fetch_add(_t_flow.elapsed().as_nanos() as u64, Ordering::Relaxed);
             PROF_STEPS.fetch_add(1, Ordering::Relaxed);
-            if is_eos && eos_step.is_none() {
+            if is_eos && eos_step.is_none() && step >= MIN_FRAMES_BEFORE_EOS {
                 eos_step = Some(step);
             }
             // Python breaks *before* queueing the latent of step eos+frames_after_eos.
@@ -1322,6 +1390,68 @@ fn prepare_text_prompt(text: &str) -> String {
     }
 
     text
+}
+
+const TERMINAL_PUNCT: &str = ".!?\u{2026}";
+const WEAK_PUNCT: &str = ",;:-\u{2013}\u{2014}";
+const CLOSERS: &str = "\"'\u{201d}\u{2019})]\u{00bb}";
+
+/// Python `_ensure_terminal_punctuation`.
+fn ensure_terminal_punctuation(text: &str) -> String {
+    let core = text.trim_end_matches(|c: char| CLOSERS.contains(c) || c == ' ');
+    let closers = text[core.len()..].trim();
+    let Some(last) = core.chars().last() else {
+        return text.to_string();
+    };
+    if TERMINAL_PUNCT.contains(last) {
+        return text.to_string();
+    }
+    if WEAK_PUNCT.contains(last) {
+        let c = core.trim_end_matches(|c: char| WEAK_PUNCT.contains(c) || c == ' ');
+        return format!("{c}.{closers}");
+    }
+    format!("{text}.")
+}
+
+/// Python-faithful `prepare_text_prompt` of pocket-tts 3.x (config-driven). Returns (text, frames_after_eos_guess).
+pub fn prepare_text_prompt_cfg(text: &str, cfg: &TextPrep) -> (String, usize) {
+    let mut text = text.trim().to_string();
+    if !cfg.replace_characters.is_empty() {
+        let mut t = String::with_capacity(text.len());
+        for c in text.chars() {
+            match cfg.replace_characters.get(&c) {
+                Some(r) => t.push_str(r),
+                None => t.push(c),
+            }
+        }
+        text = t.split_whitespace().collect::<Vec<_>>().join(" ");
+        // deleted quotes leave 'Hi?, she said': keep the sentence mark only
+        static SENT_THEN_WEAK: std::sync::LazyLock<regex::Regex> =
+            std::sync::LazyLock::new(|| regex::Regex::new(r"([.!?\u{2026}])\s*[,;:]").unwrap());
+        text = SENT_THEN_WEAK.replace_all(&text, "$1").into_owned();
+    }
+    text = text.replace(['\n', '\r'], " ").replace("  ", " ");
+    if cfg.remove_semicolons {
+        text = text.replace(';', ",");
+    }
+    let frames_after_eos_guess = if text.split_whitespace().count() <= 4 {
+        3
+    } else {
+        1
+    };
+    if cfg.capitalize_first_letter
+        && let Some(first) = text.chars().next()
+        && !first.is_uppercase()
+    {
+        text = format!("{}{}", first.to_uppercase(), &text[first.len_utf8()..]);
+    }
+    if cfg.append_terminal_punctuation {
+        text = ensure_terminal_punctuation(&text);
+    }
+    if cfg.pad_with_spaces_for_short_inputs && text.split_whitespace().count() < 5 {
+        text = format!("{}{}", " ".repeat(8), text);
+    }
+    (text, frames_after_eos_guess)
 }
 
 /// Python-faithful `prepare_text_prompt` for the `english` config

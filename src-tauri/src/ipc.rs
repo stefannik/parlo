@@ -378,6 +378,8 @@ pub enum TtsEventDto {
 pub struct VoiceDto {
     pub id: String,
     pub label: String,
+    /// ISO-639-1 language the voice speaks (`en`, `es`)
+    pub language: String,
     /// absolute path of the bundled preview clip (play with the asset protocol), if present
     pub preview_path: Option<String>,
 }

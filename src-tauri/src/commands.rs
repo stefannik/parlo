@@ -690,11 +690,7 @@ pub fn job_cancel(state: S<'_>, job_id: u32) {
 
 // =============================================================================================== text → speech
 fn quality_of(s: &str) -> Quality {
-    if s == "fast" {
-        Quality::Fast
-    } else {
-        Quality::Standard
-    }
+    Quality::parse(s)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -930,6 +926,7 @@ pub fn voices_list(state: S<'_>) -> Vec<VoiceDto> {
                 preview_path: p.exists().then(|| p.display().to_string()),
                 id: v.id,
                 label: v.label,
+                language: v.language,
             }
         })
         .collect()

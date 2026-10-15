@@ -7,87 +7,196 @@
 schema = 1
 generated = "2026-10-14"
 
-# ---------------------------------------------------------------- PocketTTS (BRIEF §3.2) ----
-# Laid out as a Hugging Face hub cache so the official `pocket-tts==2.1.0` Python reference loads offline:
-#   HF_HOME=models/pockettts/hf  HF_HUB_OFFLINE=1
-# Two snapshots: model+tokenizer at d29db79..., voice embeddings at e041936...
+# ---------------------------------------------------------------- PocketTTS (BRIEF §3.2, DECISIONS C-020) ----
+# Newest Kyutai bundles (2026-10): English = `english_2026-09` (NOT `english`/`english_2026-09_2`, see DECISIONS C-020), Spanish = `spanish`.
+# Per-language layout under models/pockettts/<lang>/{model.safetensors,tokenizer.model,embeddings/<voice>.safetensors}.
+# Weights/voice states are CC-BY-4.0 (per-voice licences: https://huggingface.co/kyutai/tts-voices).
 [pockettts]
 repo = "kyutai/pocket-tts-without-voice-cloning"
 license = "CC-BY-4.0 (weights), MIT (code)"
-hf_cache_dir = "pockettts/hf/hub/models--kyutai--pocket-tts-without-voice-cloning"
-refs_main = "e041936c75475d350b405bc870bcf7c22da4e9e6"
+dest_dir = "pockettts"
 
 [[pockettts.file]]
-path = "languages/english/model.safetensors"
-revision = "d29db7978e464fb90cb3359ee0c69a273b9142cc"
+path = "languages/english_2026-09/model.safetensors"
+dest = "english/model.safetensors"
+revision = "575d14372df89a4534bcb989870a34e77544b09f"
 size = 219029196
-sha256 = "be9c6b4876d3f30740a8225dfcaa2e43dc4aeb753c15272735bee16bbb4abb0a"
+sha256 = "916ccd2686e9311cb40054893a3c4284393d658825ffc714a276f3e9b152344f"
 
 [[pockettts.file]]
-path = "languages/english/tokenizer.model"
-revision = "d29db7978e464fb90cb3359ee0c69a273b9142cc"
+path = "languages/english_2026-09/tokenizer.model"
+dest = "english/tokenizer.model"
+revision = "575d14372df89a4534bcb989870a34e77544b09f"
 size = 59339
 sha256 = "d461765ae179566678c93091c5fa6f2984c31bbe990bf1aa62d92c64d91bc3f6"
 
 [[pockettts.file]]
-path = "languages/english/embeddings/alba.safetensors"
-revision = "e041936c75475d350b405bc870bcf7c22da4e9e6"
-size = 6194424
-sha256 = "69c32db63ca56843d994f81f343f62e0bf2d73f7e4c9bc73e44bb1110b1d8845"
+path = "languages/english_2026-09/embeddings/alba.safetensors"
+dest = "english/embeddings/alba.safetensors"
+revision = "575d14372df89a4534bcb989870a34e77544b09f"
+size = 6195000
+sha256 = "d291428b416d6c36a1de7835e51dbe1e334b75e5af512bb18dd23a1047fe8f3b"
 
 [[pockettts.file]]
-path = "languages/english/embeddings/anna.safetensors"
-revision = "e041936c75475d350b405bc870bcf7c22da4e9e6"
-size = 7816440
-sha256 = "5ea82f78db006c9fd34e32ddd5aae82674b5b32646097977436458d00af80dfa"
+path = "languages/english_2026-09/embeddings/anna.safetensors"
+dest = "english/embeddings/anna.safetensors"
+revision = "575d14372df89a4534bcb989870a34e77544b09f"
+size = 7817016
+sha256 = "80b3c36dc29aa1acd09ed522099142c5236789c8c5e87b2a30523175772a531c"
 
 [[pockettts.file]]
-path = "languages/english/embeddings/charles.safetensors"
-revision = "e041936c75475d350b405bc870bcf7c22da4e9e6"
-size = 6194424
-sha256 = "299edc20182eeccfbf94e308626f259da4fbf339daa8d5905218f2b1774639b8"
+path = "languages/english_2026-09/embeddings/azelma.safetensors"
+dest = "english/embeddings/azelma.safetensors"
+revision = "575d14372df89a4534bcb989870a34e77544b09f"
+size = 7964472
+sha256 = "1592ba7eb6784302ccaa8d48a7304f14f6fd7503969fb0466efcab607827477c"
 
 [[pockettts.file]]
-path = "languages/english/embeddings/cosette.safetensors"
-revision = "e041936c75475d350b405bc870bcf7c22da4e9e6"
-size = 6194424
-sha256 = "c4fdc15f5a3a20c44dd0064a37e87d15d25562936e8dbad7e07b9832015a545d"
+path = "languages/english_2026-09/embeddings/bill_boerst.safetensors"
+dest = "english/embeddings/bill_boerst.safetensors"
+revision = "575d14372df89a4534bcb989870a34e77544b09f"
+size = 6735672
+sha256 = "b4fb8f505ba23d5ace1b86210a4a26dd9da735463faf213c8b1f16dfd597debd"
 
 [[pockettts.file]]
-path = "languages/english/embeddings/george.safetensors"
-revision = "e041936c75475d350b405bc870bcf7c22da4e9e6"
-size = 6243576
-sha256 = "0c1c6c57c55a98d81254b33728150c7776f40647fe95258d1a6c1a02780b5d02"
+path = "languages/english_2026-09/embeddings/caro_davy.safetensors"
+dest = "english/embeddings/caro_davy.safetensors"
+revision = "575d14372df89a4534bcb989870a34e77544b09f"
+size = 5261112
+sha256 = "6361bef0343a04a1c9947d624c21b1ee3d0f430a332a50c2f32a992e55b2922b"
 
 [[pockettts.file]]
-path = "languages/english/embeddings/jane.safetensors"
-revision = "e041936c75475d350b405bc870bcf7c22da4e9e6"
-size = 7374072
-sha256 = "37386227ca8ec5bf1b8e516c13d132ce5ff5437a304fe90129a1c62f41d9a008"
+path = "languages/english_2026-09/embeddings/charles.safetensors"
+dest = "english/embeddings/charles.safetensors"
+revision = "575d14372df89a4534bcb989870a34e77544b09f"
+size = 6195000
+sha256 = "f6c03e29e9b17708f24ef3aaab0af92d9c11565c0997ee8c8271cacc72cfe53a"
 
 [[pockettts.file]]
-path = "languages/english/embeddings/mary.safetensors"
-revision = "e041936c75475d350b405bc870bcf7c22da4e9e6"
-size = 6194424
-sha256 = "a8f2adf260cab966fe0a113d6b549d6efdeaa79de544ae0ff34b5b6a41445a59"
+path = "languages/english_2026-09/embeddings/cosette.safetensors"
+dest = "english/embeddings/cosette.safetensors"
+revision = "575d14372df89a4534bcb989870a34e77544b09f"
+size = 6195000
+sha256 = "90f7a535c7c8774b8f5c28b841b0b93e1c55ef45e31f688021ad067fd2ac97f7"
 
 [[pockettts.file]]
-path = "languages/english/embeddings/michael.safetensors"
-revision = "e041936c75475d350b405bc870bcf7c22da4e9e6"
-size = 7275768
-sha256 = "8937f724ac4719b9aa51ea0ba1f18f9de0af7a663ad6263558266c1a53c9722d"
+path = "languages/english_2026-09/embeddings/eponine.safetensors"
+dest = "english/embeddings/eponine.safetensors"
+revision = "575d14372df89a4534bcb989870a34e77544b09f"
+size = 6932280
+sha256 = "0bcc4878ad3183ef8bfdbaf9224c5a71f1d18fe944fb494818c37e1f8ea6c7d0"
 
 [[pockettts.file]]
-path = "languages/english/embeddings/paul.safetensors"
-revision = "e041936c75475d350b405bc870bcf7c22da4e9e6"
-size = 6980856
-sha256 = "ed7a019168f94dfe77009f1b0de59387abc6fbb0db954d38ce722ecb77da61aa"
+path = "languages/english_2026-09/embeddings/eve.safetensors"
+dest = "english/embeddings/eve.safetensors"
+revision = "575d14372df89a4534bcb989870a34e77544b09f"
+size = 6539064
+sha256 = "ec2bf13d4ac4bcee200ee7aec1deae8132bb5bd60233f815e12a4d8efe56b8c6"
 
 [[pockettts.file]]
-path = "languages/english/embeddings/vera.safetensors"
-revision = "e041936c75475d350b405bc870bcf7c22da4e9e6"
-size = 6735096
-sha256 = "4bf50ddd957b5d218b264fdcf18efbbc7384d12da3eca98ca19b9e8dd6976acc"
+path = "languages/english_2026-09/embeddings/fantine.safetensors"
+dest = "english/embeddings/fantine.safetensors"
+revision = "575d14372df89a4534bcb989870a34e77544b09f"
+size = 6539064
+sha256 = "8b6a1c253d39c701e7b70e349796d10b4ce6f35bc58254f0e0caa572f1d41464"
+
+[[pockettts.file]]
+path = "languages/english_2026-09/embeddings/george.safetensors"
+dest = "english/embeddings/george.safetensors"
+revision = "575d14372df89a4534bcb989870a34e77544b09f"
+size = 6244152
+sha256 = "9cee0daccb0eda1631b73f8b35f6f8cb195885d55d2e1e20fc711f9e4456ceb0"
+
+[[pockettts.file]]
+path = "languages/english_2026-09/embeddings/jane.safetensors"
+dest = "english/embeddings/jane.safetensors"
+revision = "575d14372df89a4534bcb989870a34e77544b09f"
+size = 7374648
+sha256 = "fe0e73c3a01f9d3b344ce19c912654df1464cb4077393e188d54f6cff990c05f"
+
+[[pockettts.file]]
+path = "languages/english_2026-09/embeddings/javert.safetensors"
+dest = "english/embeddings/javert.safetensors"
+revision = "575d14372df89a4534bcb989870a34e77544b09f"
+size = 6195000
+sha256 = "580e4b72d4065e906c14e580f97da478c9707bead74b0ef9c049e0ca8de997d9"
+
+[[pockettts.file]]
+path = "languages/english_2026-09/embeddings/jean.safetensors"
+dest = "english/embeddings/jean.safetensors"
+revision = "575d14372df89a4534bcb989870a34e77544b09f"
+size = 6195000
+sha256 = "397583373a34c22781000a8d33e5cdceca30501368376605539b3e805bc8a837"
+
+[[pockettts.file]]
+path = "languages/english_2026-09/embeddings/marius.safetensors"
+dest = "english/embeddings/marius.safetensors"
+revision = "575d14372df89a4534bcb989870a34e77544b09f"
+size = 6195000
+sha256 = "b05946f39371f8853902b0486231f2d401c8a9570da9978329120d4ecfd009e9"
+
+[[pockettts.file]]
+path = "languages/english_2026-09/embeddings/mary.safetensors"
+dest = "english/embeddings/mary.safetensors"
+revision = "575d14372df89a4534bcb989870a34e77544b09f"
+size = 6195000
+sha256 = "8eaed3701d6ba5602393b50876f6639d3ed5d7aacc356a3ee6337957a7cbe9d2"
+
+[[pockettts.file]]
+path = "languages/english_2026-09/embeddings/michael.safetensors"
+dest = "english/embeddings/michael.safetensors"
+revision = "575d14372df89a4534bcb989870a34e77544b09f"
+size = 7276344
+sha256 = "401711f60394aa6085627f7050c1b3f97b31aa7138784811bc6c6ec7d7eaad0c"
+
+[[pockettts.file]]
+path = "languages/english_2026-09/embeddings/paul.safetensors"
+dest = "english/embeddings/paul.safetensors"
+revision = "575d14372df89a4534bcb989870a34e77544b09f"
+size = 6981432
+sha256 = "400ea75cecbe796e6adab3526264acd7ca3f3cb39f9785f531f194bdc3b26007"
+
+[[pockettts.file]]
+path = "languages/english_2026-09/embeddings/peter_yearsley.safetensors"
+dest = "english/embeddings/peter_yearsley.safetensors"
+revision = "575d14372df89a4534bcb989870a34e77544b09f"
+size = 3737392
+sha256 = "bbaf032c5887c5620f46e3d9dd213d97c9d3277a687d2944107eaa535e1d3483"
+
+[[pockettts.file]]
+path = "languages/english_2026-09/embeddings/stuart_bell.safetensors"
+dest = "english/embeddings/stuart_bell.safetensors"
+revision = "575d14372df89a4534bcb989870a34e77544b09f"
+size = 5261112
+sha256 = "c560ae214a3f5e52648839a01222da245b82d834dc02f611a04154319ad1434f"
+
+[[pockettts.file]]
+path = "languages/english_2026-09/embeddings/vera.safetensors"
+dest = "english/embeddings/vera.safetensors"
+revision = "575d14372df89a4534bcb989870a34e77544b09f"
+size = 6735672
+sha256 = "3a9d4a9237d8615b5c3d10610b16a3037edb163cc18df42f138bfbc1f2beb7a3"
+
+[[pockettts.file]]
+path = "languages/spanish/model.safetensors"
+dest = "spanish/model.safetensors"
+revision = "575d14372df89a4534bcb989870a34e77544b09f"
+size = 219029196
+sha256 = "c4988ff376692f2ab1e85b17350755b08f16e49c0b5f0de8b271efa9abd71de7"
+
+[[pockettts.file]]
+path = "languages/spanish/tokenizer.model"
+dest = "spanish/tokenizer.model"
+revision = "575d14372df89a4534bcb989870a34e77544b09f"
+size = 61063
+sha256 = "9714c8ce180d8147ab4c1406cd759619828f95d7000c87c41dc9ccec527a3e89"
+
+[[pockettts.file]]
+path = "languages/spanish/embeddings/lola.safetensors"
+dest = "spanish/embeddings/lola.safetensors"
+revision = "575d14372df89a4534bcb989870a34e77544b09f"
+size = 5457720
+sha256 = "967b8f08639345ff5ad1a912a5542fe421518c3f80b87d52078c6726348ab1e7"
 
 # ---------------------------------------------------------------- Whisper GGML (BRIEF §6.2) ----
 [whisper]

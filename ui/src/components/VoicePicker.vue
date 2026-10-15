@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Voice picker: a listbox popover with a ▶ preview per voice (bundled clips; plays through the asset protocol).
-import { nextTick, onBeforeUnmount, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { backend } from '../backend'
 import type { VoiceDto } from '../bindings'
 import Icon from './Icon.vue'
@@ -15,6 +15,17 @@ const previewing = ref<string | null>(null)
 let audio: HTMLAudioElement | null = null
 
 const current = () => props.voices.find((v) => v.id === props.modelValue)
+const LANGUAGE_NAMES: Record<string, string> = { en: 'English', es: 'Español' }
+/** voices grouped by language, in the order the core lists them (English first) */
+const groups = computed(() => {
+  const g: Array<{ code: string; name: string; voices: VoiceDto[] }> = []
+  for (const v of props.voices) {
+    let grp = g.find((x) => x.code === v.language)
+    if (!grp) g.push((grp = { code: v.language, name: LANGUAGE_NAMES[v.language] ?? v.language, voices: [] }))
+    grp.voices.push(v)
+  }
+  return g
+})
 
 async function show() {
   open.value = true
@@ -78,16 +89,19 @@ onBeforeUnmount(() => {
       <Icon name="chevron" :size="14" />
     </button>
     <ul v-if="open" ref="list" class="list card" role="listbox" aria-label="Voice" @keydown="onKey">
-        <li v-for="v in voices" :key="v.id" role="option" :aria-selected="v.id === modelValue" class="row" :class="{ sel: v.id === modelValue }">
-          <button type="button" class="pick" :data-testid="`voice-${v.id}`" @click="choose(v.id)">
-            <Icon v-if="v.id === modelValue" name="check" :size="14" />
-            <span v-else class="gap" />
-            {{ v.label }}
-          </button>
-          <button v-if="v.preview_path" type="button" class="btn btn-ghost btn-icon prev" :aria-label="`Preview ${v.label}`" tabindex="-1" @click="preview(v)">
-            <Icon :name="previewing === v.id ? 'stop' : 'play'" :size="14" />
-          </button>
-        </li>
+        <template v-for="g in groups" :key="g.code">
+          <li v-if="groups.length > 1" role="presentation" class="grp" :data-testid="`voice-group-${g.code}`">{{ g.name }}</li>
+          <li v-for="v in g.voices" :key="v.id" role="option" :aria-selected="v.id === modelValue" class="row" :class="{ sel: v.id === modelValue }">
+            <button type="button" class="pick" :data-testid="`voice-${v.id}`" @click="choose(v.id)">
+              <Icon v-if="v.id === modelValue" name="check" :size="14" />
+              <span v-else class="gap" />
+              {{ v.label }}
+            </button>
+            <button v-if="v.preview_path" type="button" class="btn btn-ghost btn-icon prev" :aria-label="`Preview ${v.label}`" tabindex="-1" @click="preview(v)">
+              <Icon :name="previewing === v.id ? 'stop' : 'play'" :size="14" />
+            </button>
+          </li>
+        </template>
       </ul>
   </div>
 </template>
@@ -99,6 +113,7 @@ onBeforeUnmount(() => {
 .row:hover { background: var(--surface-2); }
 .pick { flex: 1; display: flex; align-items: center; gap: var(--s2); padding: 6px 10px; border: 0; background: transparent; text-align: left; border-radius: 6px; }
 .gap { width: 14px; }
+.grp { padding: 8px 10px 4px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
 .prev { width: 28px; min-height: 28px; }
 .list { animation: pop-in var(--dur) var(--ease); }
 @keyframes pop-in { from { opacity: 0; transform: translateY(4px); } }

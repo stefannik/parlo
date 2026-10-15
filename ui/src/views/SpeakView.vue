@@ -95,6 +95,7 @@ defineExpose({ openFile })
     <!-- bottom bar -->
     <div class="bottom card">
       <VoicePicker v-model="sp.voice" :voices="sp.voices" />
+      <span v-if="sp.voiceLanguage && sp.voiceLanguage !== 'en'" class="small muted" data-testid="voice-language-hint">{{ sp.voiceLanguageName }} voice — write the text in {{ sp.voiceLanguageName }}.</span>
       <div class="speed">
         <label class="small muted" for="speak-speed">Speed</label>
         <input id="speak-speed" type="range" min="0.5" max="2" step="0.05" :value="sp.speed" data-testid="speed-slider" @input="sp.speed = Number(($event.target as HTMLInputElement).value)" />

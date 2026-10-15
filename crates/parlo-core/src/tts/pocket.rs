@@ -1,7 +1,7 @@
-//! PocketTTS through the patched Candle port (`crates/pocket-tts`), BRIEF §3.2 parameters:
-//! English, temperature 0.7, `lsd_decode_steps` 4 (Standard) / 1 (Fast), 50 tokens per internal chunk, 24 kHz mono.
-//! Offline by construction: weights/tokenizer/voices are explicit local paths from the HF-cache layout that
-//! `scripts/fetch-models.sh` creates (the vendored crate has no network code).
+//! PocketTTS through the patched Candle port (`crates/pocket-tts`): Kyutai's 2026-09 English model (`english_2026-09`)
+//! and the Spanish model, temperature 0.3, sampler steps 1 (Standard) / 4 (High), 50 tokens per internal chunk, 24 kHz mono.
+//! Offline by construction: weights/tokenizers/voices are explicit local paths under `models/pockettts/<language>/`
+//! (laid out by `scripts/fetch-models.sh`; the vendored crate has no network code).
 //!
 //! Flow-LM and the Mimi decoder run on two threads (as the Python reference does) so decode overlaps generation.
 
@@ -16,40 +16,91 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::sync_channel;
 
-pub const WEIGHTS_REV: &str = "d29db7978e464fb90cb3359ee0c69a273b9142cc";
-pub const VOICES_REV: &str = "e041936c75475d350b405bc870bcf7c22da4e9e6";
-pub const VOICE_IDS: [&str; 10] = [
-    "alba", "anna", "charles", "cosette", "george", "jane", "mary", "michael", "paul", "vera",
+/// Kyutai `pocket-tts-without-voice-cloning` @575d1437: English = `english_2026-09` (not `english`/`english_2026-09_2`,
+/// which cut off digit-heavy text — DECISIONS C-020), Spanish = `spanish`.
+pub const MODEL_REV: &str = "575d1437";
+
+/// (id, label, language code). English voices come with the English model, Spanish with the Spanish model.
+pub const VOICES: [(&str, &str, &str); 22] = [
+    ("alba", "Alba", "en"),
+    ("anna", "Anna", "en"),
+    ("azelma", "Azelma", "en"),
+    ("bill_boerst", "Bill Boerst", "en"),
+    ("caro_davy", "Caro Davy", "en"),
+    ("charles", "Charles", "en"),
+    ("cosette", "Cosette", "en"),
+    ("eponine", "Eponine", "en"),
+    ("eve", "Eve", "en"),
+    ("fantine", "Fantine", "en"),
+    ("george", "George", "en"),
+    ("jane", "Jane", "en"),
+    ("javert", "Javert", "en"),
+    ("jean", "Jean", "en"),
+    ("marius", "Marius", "en"),
+    ("mary", "Mary", "en"),
+    ("michael", "Michael", "en"),
+    ("paul", "Paul", "en"),
+    ("peter_yearsley", "Peter Yearsley", "en"),
+    ("stuart_bell", "Stuart Bell", "en"),
+    ("vera", "Vera", "en"),
+    ("lola", "Lola", "es"),
 ];
-const TEMPERATURE: f32 = 0.7;
+/// Kyutai's default for every shipped model ("0.3 beats 0.7 on WER and UTMOS", human evals agreed).
+const TEMPERATURE: f32 = 0.3;
 const EOS_THRESHOLD: f32 = -4.0;
 const MAX_TOKENS_PER_CHUNK: usize = 50;
-const TEMPLATE: &str = include_str!("english.yaml.tmpl");
+
+fn lang_dir(code: &str) -> &'static str {
+    if code == "es" {
+        "spanish"
+    } else {
+        "english"
+    }
+}
+fn template(code: &str) -> &'static str {
+    if code == "es" {
+        include_str!("spanish.yaml.tmpl")
+    } else {
+        include_str!("english.yaml.tmpl")
+    }
+}
+fn language_of<'a>(available: &'a [VoiceInfo], voice: &str) -> Option<&'a str> {
+    available
+        .iter()
+        .find(|v| v.id == voice)
+        .map(|v| v.language.as_str())
+}
 
 fn yaml_quote(p: &std::path::Path) -> String {
     p.to_string_lossy().replace('\'', "''")
 }
 
-/// Voices present on disk, without loading the model (the UI lists them at startup; previews play without the engine).
-pub fn discover_voices(models: &ModelPaths) -> Vec<VoiceInfo> {
-    let dir = models
-        .pockettts()
-        .join("hf/hub/models--kyutai--pocket-tts-without-voice-cloning/snapshots")
-        .join(VOICES_REV)
-        .join("languages/english/embeddings");
-    VOICE_IDS
+fn voices_on_disk(root: &std::path::Path) -> Vec<VoiceInfo> {
+    VOICES
         .iter()
-        .filter(|v| dir.join(format!("{v}.safetensors")).exists())
-        .map(|v| VoiceInfo {
-            id: (*v).into(),
-            label: v[..1].to_uppercase() + &v[1..],
+        .filter(|(id, _, lang)| {
+            root.join(lang_dir(lang))
+                .join("embeddings")
+                .join(format!("{id}.safetensors"))
+                .exists()
+        })
+        .map(|(id, label, lang)| VoiceInfo {
+            id: (*id).into(),
+            label: (*label).into(),
+            language: (*lang).into(),
         })
         .collect()
 }
 
+/// Voices present on disk, without loading the model (the UI lists them at startup; previews play without the engine).
+pub fn discover_voices(models: &ModelPaths) -> Vec<VoiceInfo> {
+    voices_on_disk(&models.pockettts())
+}
+
 pub struct PocketEngine {
-    model: TTSModel,
-    voices_dir: PathBuf,
+    root: PathBuf,
+    /// one model per language, loaded on first use (English at start)
+    models: HashMap<&'static str, TTSModel>,
     cache: HashMap<String, ModelState>,
     available: Vec<VoiceInfo>,
     revision: String,
@@ -61,58 +112,60 @@ fn cerr(e: impl std::fmt::Display) -> Error {
 
 impl PocketEngine {
     pub fn load(models: &ModelPaths) -> Result<Self> {
-        let snap = models
-            .pockettts()
-            .join("hf/hub/models--kyutai--pocket-tts-without-voice-cloning/snapshots");
-        let w = snap.join(WEIGHTS_REV).join("languages/english");
-        let weights = w.join("model.safetensors");
-        let tokenizer = w.join("tokenizer.model");
-        let voices_dir = snap.join(VOICES_REV).join("languages/english/embeddings");
-        for f in [&weights, &tokenizer] {
-            if !f.exists() {
-                return Err(Error::Other(format!("Speech model file not found: {}. Run scripts/fetch-models.sh --only pockettts.", f.display())));
-            }
-        }
-        let available: Vec<VoiceInfo> = VOICE_IDS
-            .iter()
-            .filter(|v| voices_dir.join(format!("{v}.safetensors")).exists())
-            .map(|v| VoiceInfo {
-                id: (*v).into(),
-                label: v[..1].to_uppercase() + &v[1..],
-            })
-            .collect();
-        if available.len() < VOICE_IDS.len() {
-            tracing::warn!(
-                "{} of {} voices are missing on disk and are hidden",
-                VOICE_IDS.len() - available.len(),
-                VOICE_IDS.len()
-            );
-        }
-        if available.is_empty() {
+        let root = models.pockettts();
+        let available = voices_on_disk(&root);
+        if !available.iter().any(|v| v.language == "en") {
             return Err(Error::Other(
-                "No voices found. Run scripts/fetch-models.sh --only pockettts.".into(),
+                "No English voices found. Run scripts/fetch-models.sh --only pockettts.".into(),
             ));
         }
-        let yaml = TEMPLATE
-            .replace("@@MODEL@@", &yaml_quote(&weights))
-            .replace("@@TOKENIZER@@", &yaml_quote(&tokenizer));
-        let device = Self::device();
-        let model = TTSModel::load_from_yaml_str(
-            &yaml,
-            TEMPERATURE,
-            Quality::Standard.lsd_decode_steps(),
-            EOS_THRESHOLD,
-            None,
-            &device,
-        )
-        .map_err(cerr)?;
-        Ok(Self {
-            model,
-            voices_dir,
+        if available.len() < VOICES.len() {
+            tracing::warn!(
+                "{} of {} voices are missing on disk and are hidden",
+                VOICES.len() - available.len(),
+                VOICES.len()
+            );
+        }
+        let mut e = Self {
+            root,
+            models: HashMap::new(),
             cache: HashMap::new(),
             available,
-            revision: format!("{}+{}", &WEIGHTS_REV[..8], &VOICES_REV[..8]),
-        })
+            revision: format!("{MODEL_REV}+english_2026-09+spanish"),
+        };
+        e.model_for("en")?; // English now, so a broken install fails at load, not mid-job
+        Ok(e)
+    }
+
+    /// The model for a language code, loaded on first use. Only one language's model is kept in memory (loading takes
+    /// ~60 ms; two resident models would push peak RSS from ~650 MB to ~1.1 GB, over the 800 MB budget).
+    fn model_for(&mut self, code: &str) -> Result<&mut TTSModel> {
+        let key: &'static str = if code == "es" { "es" } else { "en" };
+        if !self.models.contains_key(key) {
+            self.models.clear();
+            let dir = self.root.join(lang_dir(key));
+            let weights = dir.join("model.safetensors");
+            let tokenizer = dir.join("tokenizer.model");
+            for f in [&weights, &tokenizer] {
+                if !f.exists() {
+                    return Err(Error::Other(format!("Speech model file not found: {}. Run scripts/fetch-models.sh --only pockettts.", f.display())));
+                }
+            }
+            let yaml = template(key)
+                .replace("@@MODEL@@", &yaml_quote(&weights))
+                .replace("@@TOKENIZER@@", &yaml_quote(&tokenizer));
+            let model = TTSModel::load_from_yaml_str(
+                &yaml,
+                TEMPERATURE,
+                Quality::Standard.lsd_decode_steps(),
+                EOS_THRESHOLD,
+                None,
+                &Self::device(),
+            )
+            .map_err(cerr)?;
+            self.models.insert(key, model);
+        }
+        Ok(self.models.get_mut(key).expect("just inserted"))
     }
 
     #[cfg(feature = "tts-metal")]
@@ -124,22 +177,38 @@ impl PocketEngine {
         Device::Cpu
     }
 
-    fn voice_state(&mut self, voice: &str) -> Result<ModelState> {
+    /// The internal text chunks the engine would synthesize for `text` with `voice` (diagnostics / parity checks).
+    pub fn debug_chunks(&mut self, voice: &str, text: &str) -> Result<Vec<String>> {
+        let (_, model) = self.voice_state(voice)?;
+        let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        model
+            .split_chunks_py(&text, MAX_TOKENS_PER_CHUNK)
+            .map_err(cerr)
+    }
+
+    /// Token ids of `text` for the English model (diagnostics / parity checks).
+    pub fn debug_tokens(&mut self, text: &str) -> Result<Vec<u32>> {
+        let m = self.model_for("en")?;
+        m.conditioner.encode_ids(text).map_err(cerr)
+    }
+
+    fn voice_state(&mut self, voice: &str) -> Result<(ModelState, TTSModel)> {
+        let Some(lang) = language_of(&self.available, voice).map(str::to_string) else {
+            return Err(Error::Other(format!(
+                "The voice '{voice}' is not available."
+            )));
+        };
+        let path = self
+            .root
+            .join(lang_dir(&lang))
+            .join("embeddings")
+            .join(format!("{voice}.safetensors"));
+        let model = self.model_for(&lang)?.clone(); // cheap (Arc-backed tensors)
         if !self.cache.contains_key(voice) {
-            if !self.available.iter().any(|v| v.id == voice) {
-                return Err(Error::Other(format!(
-                    "The voice '{voice}' is not available."
-                )));
-            }
-            let st = load_kv_voice_state(
-                self.voices_dir.join(format!("{voice}.safetensors")),
-                "flow_lm.",
-                &self.model.device,
-            )
-            .map_err(cerr)?;
+            let st = load_kv_voice_state(path, "flow_lm.", &model.device).map_err(cerr)?;
             self.cache.insert(voice.to_string(), st);
         }
-        Ok(self.cache[voice].clone())
+        Ok((self.cache[voice].clone(), model))
     }
 }
 
@@ -151,7 +220,7 @@ impl TtsEngine for PocketEngine {
         &self.revision
     }
     fn sample_rate(&self) -> u32 {
-        self.model.sample_rate as u32
+        24_000
     }
     fn voices(&self) -> Vec<VoiceInfo> {
         self.available.clone()
@@ -165,9 +234,8 @@ impl TtsEngine for PocketEngine {
         sink: &mut dyn FnMut(&[f32]) -> Result<()>,
         abort: &AtomicBool,
     ) -> Result<()> {
-        let state = self.voice_state(voice)?;
+        let (state, mut model) = self.voice_state(voice)?;
         let text = text.split_whitespace().collect::<Vec<_>>().join(" "); // ctric: whitespace-normalized
-        let mut model = self.model.clone(); // cheap (Arc-backed tensors)
         model.lsd_decode_steps = quality.lsd_decode_steps();
         let chunks = model
             .split_chunks_py(&text, MAX_TOKENS_PER_CHUNK)
