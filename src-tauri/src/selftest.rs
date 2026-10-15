@@ -680,6 +680,31 @@ fn lifecycle_script(app: &AppHandle, say: &dyn Fn(&str)) -> R<()> {
     Ok(())
 }
 
+/// `PARLO_SELFTEST=pressure`: load both engines with a 15-minute idle timeout, announce `READY`, then wait (≤ 120 s) for
+/// the macOS memory-pressure subscription to unload them. Driven by scripts/mac-memory-pressure-test.sh.
+fn pressure_script(app: &AppHandle, say: &dyn Fn(&str)) -> R<()> {
+    use parlo_core::models::IdleTimeout;
+    let st = st_of(app);
+    st.host
+        .set_idle_timeout(IdleTimeout::After(Duration::from_secs(900)));
+    {
+        let _s = st.stt.acquire().map_err(|e| e.to_string())?;
+        let _t = st.tts.acquire().map_err(|e| e.to_string())?;
+    }
+    ensure(st.stt.is_loaded() && st.tts.is_loaded(), "engines did not load")?;
+    println!("READY engines loaded, idle timeout 15 min");
+    use std::io::Write;
+    let _ = std::io::stdout().flush();
+    for i in 0..120 {
+        std::thread::sleep(Duration::from_secs(1));
+        if !st.stt.is_loaded() && !st.tts.is_loaded() {
+            say(&format!("memory pressure unloaded both engines after {i} s"));
+            return Ok(());
+        }
+    }
+    Err("engines were not unloaded within 120 s of the memory-pressure event".into())
+}
+
 /// Experiment: one engine only, unload immediately, print RSS at each step (memory-return investigation).
 fn lc_isolated(app: &AppHandle, only: &str) -> R<()> {
     use parlo_core::models::IdleTimeout;
@@ -774,6 +799,8 @@ pub fn spawn(app: AppHandle, state: Arc<AppState>) {
             let mode = std::env::var("PARLO_SELFTEST").unwrap_or_default();
             match if mode == "mic" {
                 mic_script(&app, &say)
+            } else if mode == "pressure" {
+                pressure_script(&app, &say)
             } else if mode == "lifecycle" {
                 lifecycle_script(&app, &say)
             } else {
