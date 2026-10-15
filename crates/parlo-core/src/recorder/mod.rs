@@ -46,7 +46,7 @@ impl RecorderConfig {
             dir: dir.into(),
             device: DeviceSelector::SystemDefault,
             id: None,
-            sync_interval: Duration::from_secs(2),
+            sync_interval: Duration::from_secs(1),
             ring_seconds: 4.0,
             stall_after: Duration::from_secs(1),
             silent_after: Duration::from_secs(10),

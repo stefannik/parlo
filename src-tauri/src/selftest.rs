@@ -680,6 +680,68 @@ fn lifecycle_script(app: &AppHandle, say: &dyn Fn(&str)) -> R<()> {
     Ok(())
 }
 
+/// `PARLO_SELFTEST=kill9 [PARLO_SELFTEST_SECONDS]`: record from the real microphone, then SIGKILL ourselves (BRIEF §14.2
+/// scenario 4). Prints `KILL elapsed_ms=…` just before. `PARLO_SELFTEST=recover` (same `PARLO_HOME`) then checks that the
+/// recording is listed as recoverable, playable, and lost ≤ 2 s (`PARLO_EXPECT_MS` = the printed elapsed time).
+fn kill9_script(app: &AppHandle) -> R<()> {
+    let secs: u64 = std::env::var("PARLO_SELFTEST_SECONDS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(8);
+    let perm = ipc(
+        tauri::async_runtime::block_on(c::mic_permission_request(st_of(app))),
+        "mic_permission_request",
+    )?;
+    ensure(matches!(perm, MicPermission::Granted), "microphone not granted")?;
+    let t0 = std::time::Instant::now();
+    ipc(
+        c::recording_start(app.clone(), st_of(app), None),
+        "recording_start",
+    )?;
+    std::thread::sleep(Duration::from_secs(secs));
+    println!("KILL elapsed_ms={}", t0.elapsed().as_millis());
+    use std::io::Write;
+    let _ = std::io::stdout().flush();
+    let _ = std::process::Command::new("kill")
+        .args(["-9", &std::process::id().to_string()])
+        .status();
+    std::thread::sleep(Duration::from_secs(5));
+    Err("still alive after kill -9".into())
+}
+
+fn recover_script(app: &AppHandle, say: &dyn Fn(&str)) -> R<()> {
+    let expect: i64 = std::env::var("PARLO_EXPECT_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .ok_or("PARLO_EXPECT_MS missing")?;
+    let list = ipc(c::recoverables_list(st_of(app)), "recoverables_list")?;
+    let rec = list
+        .iter()
+        .find_map(|r| match r {
+            RecoverableDto::Recording {
+                wav_path,
+                duration_ms,
+                ..
+            } => Some((wav_path.clone(), *duration_ms)),
+            _ => None,
+        })
+        .ok_or_else(|| format!("no recoverable recording found: {list:?}"))?;
+    let pcm = parlo_core::audio::wav::PcmFile::open(std::path::Path::new(&rec.0))
+        .map_err(|e| e.to_string())?;
+    let real_ms = (pcm.frames as f64 / pcm.sample_rate as f64 * 1000.0) as i64;
+    say(&format!(
+        "recoverable recording: {} ms in the file (sidecar says {} ms), recording ran {} ms",
+        real_ms, rec.1, expect
+    ));
+    let lost = expect - real_ms;
+    ensure(
+        lost <= 2000 && real_ms > 0,
+        format!("lost {lost} ms (budget 2000)"),
+    )?;
+    say(&format!("lost {lost} ms (budget 2000); WAV header valid and playable"));
+    Ok(())
+}
+
 /// `PARLO_SELFTEST=pressure`: load both engines with a 15-minute idle timeout, announce `READY`, then wait (≤ 120 s) for
 /// the macOS memory-pressure subscription to unload them. Driven by scripts/mac-memory-pressure-test.sh.
 fn pressure_script(app: &AppHandle, say: &dyn Fn(&str)) -> R<()> {
@@ -799,6 +861,10 @@ pub fn spawn(app: AppHandle, state: Arc<AppState>) {
             let mode = std::env::var("PARLO_SELFTEST").unwrap_or_default();
             match if mode == "mic" {
                 mic_script(&app, &say)
+            } else if mode == "kill9" {
+                kill9_script(&app).map(|_| ())
+            } else if mode == "recover" {
+                recover_script(&app, &say)
             } else if mode == "pressure" {
                 pressure_script(&app, &say)
             } else if mode == "lifecycle" {

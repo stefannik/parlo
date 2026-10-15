@@ -5,13 +5,13 @@ Run on the Mac with the bundled app. Tick with date + commit.
 ## Recording interruptions (BRIEF §8.2)
 - [ ] Close window while recording → recording continues; reopen reattaches
 - [ ] ⌘Q while recording → "Stop and save / Cancel" dialog
-- [ ] `kill -9` while recording → relaunch shows recovery banner; file playable, ≤ 2 s lost
+- [x] `kill -9` while recording → file recoverable and playable, 1.0 s lost (real mic, bundled app; `scripts/mac-kill9-test.sh`, 2026-10-15). Recovery *banner* look: UI pass pending
 - [ ] AirPods connect/disconnect (System default follows) → same file, gap marker, notice
 - [ ] Pinned device vanishes → falls back to default + notice
 - [ ] Screen lock 2 min → continues
 - [ ] Lid close / forced sleep → flush, resume on wake with gap marker
 - [ ] Disk nearly full → warning at < 2 GB, graceful stop at < 300 MB
-- [ ] Mic permission denied/revoked → guidance + button to System Settings
+- [ ] Mic permission denied/revoked → guidance + button to System Settings (granted state + prompt verified 2026-10-15)
 - [ ] Muted mic > 10 s → inline warning
 
 ## UI review (light + dark) — in the bundled app (WKWebView)
@@ -20,6 +20,7 @@ Cloud pre-check done with Playwright-WebKit on every state below (`docs/screensh
 - [ ] Speak: compose · imported (source chip, warnings, large-document preview) · voice picker (previews play) · generating (player active on first segment) · result (Export ▾, Reveal) · "out of date" marker · error
 - [ ] Settings (all six sections), recovery banner, drag-over overlay, toasts, confirm dialogs (Discard recording / New with edits / re-transcribe), quit dialog while recording
 - [ ] Overlay title bar: traffic lights don't overlap the segmented control; the bar drags the window; buttons inside it still click
+- [x] Window renders in WKWebView (dark, overlay title bar, traffic lights clear of the segmented control): `docs/screenshots-mac/transcribe-empty-dark.png`
 - [ ] Contrast in both themes (`npm --prefix ui run check:contrast` passes; eyeball the text-3 placeholders)
 - [ ] Reduced motion: no transitions with *System Settings → Accessibility → Reduce motion*
 - [ ] Keyboard-only: ⌘1/⌘2, ⌘R, ⌘P, ⌘O, ⌘↩, ⇧⌘C, ⌘E, ⌘,, Esc, Space (play/pause outside text fields); Tab order is sensible; focus rings visible; menus/popovers trap and restore focus
