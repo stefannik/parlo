@@ -175,7 +175,9 @@ export type RecordingInfoDto = {
 	device: string,
 };
 
-export type RecoverableDto = { kind: "recording"; id: string; wav_path: string; duration_ms: number; started_at: string } | { kind: "stt_job"; job_id: string; source_name: string } | { kind: "tts_job"; job_id: string; text_preview: string; voice: string };
+export type RecoverableDto = { kind: "recording"; id: string; wav_path: string; duration_ms: number; started_at: string; 
+/**  stopped and saved by the quit dialog (nothing lost; just never transcribed) */
+saved_on_quit: boolean } | { kind: "stt_job"; job_id: string; source_name: string } | { kind: "tts_job"; job_id: string; text_preview: string; voice: string };
 
 export type Retention = "day1" | "days7" | "days30" | "forever";
 

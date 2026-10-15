@@ -381,6 +381,7 @@ pub fn recoverables_list(state: S<'_>) -> IpcResult<Vec<RecoverableDto>> {
             wav_path: r.wav.display().to_string(),
             duration_ms: r.sidecar.duration_ms,
             started_at: r.sidecar.started_at.clone(),
+            saved_on_quit: r.sidecar.stop_reason.as_deref() == Some(recovery::QUIT_REASON),
         });
     }
     if let Ok(rd) = std::fs::read_dir(state.paths.jobs()) {
@@ -1248,12 +1249,19 @@ pub fn diagnostics_text(state: S<'_>) -> String {
 #[tauri::command]
 #[specta::specta]
 pub fn quit_confirmed(app: AppHandle, state: S<'_>) -> IpcResult<()> {
-    if let Some(h) = state.recorder.lock().unwrap().take() {
-        let _ = h.stop();
-    }
+    stop_recording_for_quit(&state);
     state.quitting.store(true, Ordering::SeqCst);
     app.exit(0);
     Ok(())
+}
+
+/// ⌘Q → "Stop and save": finish the recording and tag it so the next launch offers to transcribe it.
+pub fn stop_recording_for_quit(state: &AppState) {
+    if let Some(h) = state.recorder.lock().unwrap().take() {
+        let id = h.id().to_string();
+        let _ = h.stop();
+        let _ = recovery::mark_saved_on_quit(&state.recordings_dir(), &id);
+    }
 }
 
 pub fn _assert_send_sync() {

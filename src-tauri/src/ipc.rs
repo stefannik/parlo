@@ -473,6 +473,8 @@ pub enum RecoverableDto {
         #[specta(type = specta_typescript::Number)]
         duration_ms: u64,
         started_at: String,
+        /// stopped and saved by the quit dialog (nothing lost; just never transcribed)
+        saved_on_quit: bool,
     },
     SttJob {
         job_id: String,

@@ -154,7 +154,7 @@ describe('mock backend contract', () => {
   })
 
   it('recoverables can be discarded', async () => {
-    const { backend } = setup({ recoverables: [{ kind: 'recording', id: 'r1', wav_path: '/x.wav', duration_ms: 1000, started_at: new Date().toISOString() }] })
+    const { backend } = setup({ recoverables: [{ kind: 'recording', id: 'r1', wav_path: '/x.wav', duration_ms: 1000, started_at: new Date().toISOString(), saved_on_quit: false }] })
     expect(await backend.recoverables()).toHaveLength(1)
     await backend.recoverableDiscard('recording', 'r1')
     expect(await backend.recoverables()).toHaveLength(0)

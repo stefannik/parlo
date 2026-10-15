@@ -207,7 +207,7 @@ describe('app shell (mock backend)', () => {
   })
 
   it('Recovery banner offers Transcribe / Save audio / Discard for an interrupted recording', async () => {
-    const { w } = await boot({ timeScale: 0.02, recoverables: [{ kind: 'recording', id: 'rec-9', wav_path: '/mock/recordings/rec-9.wav', duration_ms: 754_000, started_at: '2026-10-13T09:00:00Z' }] })
+    const { w } = await boot({ timeScale: 0.02, recoverables: [{ kind: 'recording', id: 'rec-9', wav_path: '/mock/recordings/rec-9.wav', duration_ms: 754_000, started_at: '2026-10-13T09:00:00Z', saved_on_quit: false }] })
     const banner = tid(w, 'recovery-banner')
     expect(banner.text()).toContain('12:34')
     expect(banner.findAll('button').map((b) => b.text())).toEqual(['Transcribe', 'Save audio…', 'Discard'])

@@ -6,6 +6,19 @@ use crate::audio::wav::repair_wav;
 use crate::error::Result;
 use std::path::{Path, PathBuf};
 
+/// `stop_reason` of a recording that was stopped and saved because the user quit the app while recording.
+pub const QUIT_REASON: &str = "saved when Parlo was quit";
+
+/// Remember that recording `id` was stopped by quitting, so the next launch offers it (BRIEF §4.4).
+pub fn mark_saved_on_quit(dir: &Path, id: &str) -> Result<()> {
+    let mut sc = Sidecar::read(&dir.join(format!("{id}.json")))?;
+    if sc.stop_reason.is_none() {
+        sc.stop_reason = Some(QUIT_REASON.into());
+        sc.write(dir)?;
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone)]
 pub struct Recoverable {
     pub id: String,
@@ -60,6 +73,18 @@ pub fn recover_all(dir: &Path) -> Result<Vec<Recoverable>> {
                     }
                     Err(e) => tracing::warn!("could not repair {}: {e}", wav.display()),
                 }
+            }
+            // stopped and saved by "Stop and save" on ⌘Q: nothing was lost, but it was never transcribed — offer it again
+            RecState::Finalized
+                if sc.stop_reason.as_deref() == Some(QUIT_REASON)
+                    && !sc.transcribed
+                    && wav.exists() =>
+            {
+                out.push(Recoverable {
+                    id: sc.id.clone(),
+                    wav,
+                    sidecar: sc,
+                })
             }
             RecState::Recovered if !sc.transcribed && wav.exists() => out.push(Recoverable {
                 id: sc.id.clone(),

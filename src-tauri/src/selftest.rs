@@ -692,7 +692,10 @@ fn kill9_script(app: &AppHandle) -> R<()> {
         tauri::async_runtime::block_on(c::mic_permission_request(st_of(app))),
         "mic_permission_request",
     )?;
-    ensure(matches!(perm, MicPermission::Granted), "microphone not granted")?;
+    ensure(
+        matches!(perm, MicPermission::Granted),
+        "microphone not granted",
+    )?;
     let t0 = std::time::Instant::now();
     ipc(
         c::recording_start(app.clone(), st_of(app), None),
@@ -738,7 +741,9 @@ fn recover_script(app: &AppHandle, say: &dyn Fn(&str)) -> R<()> {
         lost <= 2000 && real_ms > 0,
         format!("lost {lost} ms (budget 2000)"),
     )?;
-    say(&format!("lost {lost} ms (budget 2000); WAV header valid and playable"));
+    say(&format!(
+        "lost {lost} ms (budget 2000); WAV header valid and playable"
+    ));
     Ok(())
 }
 
@@ -753,14 +758,19 @@ fn pressure_script(app: &AppHandle, say: &dyn Fn(&str)) -> R<()> {
         let _s = st.stt.acquire().map_err(|e| e.to_string())?;
         let _t = st.tts.acquire().map_err(|e| e.to_string())?;
     }
-    ensure(st.stt.is_loaded() && st.tts.is_loaded(), "engines did not load")?;
+    ensure(
+        st.stt.is_loaded() && st.tts.is_loaded(),
+        "engines did not load",
+    )?;
     println!("READY engines loaded, idle timeout 15 min");
     use std::io::Write;
     let _ = std::io::stdout().flush();
     for i in 0..120 {
         std::thread::sleep(Duration::from_secs(1));
         if !st.stt.is_loaded() && !st.tts.is_loaded() {
-            say(&format!("memory pressure unloaded both engines after {i} s"));
+            say(&format!(
+                "memory pressure unloaded both engines after {i} s"
+            ));
             return Ok(());
         }
     }

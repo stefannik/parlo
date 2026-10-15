@@ -497,3 +497,30 @@ fn soak_three_hours_accelerated_has_exact_frame_count_and_bounded_memory() {
         peak - rss0
     );
 }
+
+#[test]
+fn a_recording_saved_on_quit_is_offered_again_until_transcribed() {
+    let rig =
+        Rig::new(FileSource::counter(48_000, Mode::Accelerated).with_total_frames(48_000 * 2));
+    let h = start(rig.cfg(), rig.deps(), rig.tx.clone()).unwrap();
+    wait_until("2 s", Duration::from_secs(10), || {
+        h.snapshot().frames >= 48_000 * 2
+    });
+    let info = h.stop().unwrap();
+    // a normally finished recording is not offered…
+    assert!(recovery::recover_all(rig.dir.path()).unwrap().is_empty());
+    // …but one stopped by "Stop and save" on quit is, with nothing repaired or lost
+    recovery::mark_saved_on_quit(rig.dir.path(), &info.id).unwrap();
+    let rec = recovery::recover_all(rig.dir.path()).unwrap();
+    assert_eq!(rec.len(), 1);
+    assert_eq!(rec[0].sidecar.state, RecState::Finalized);
+    assert_eq!(
+        rec[0].sidecar.stop_reason.as_deref(),
+        Some(recovery::QUIT_REASON)
+    );
+    // once transcribed it disappears
+    let mut sc = rec[0].sidecar.clone();
+    sc.transcribed = true;
+    sc.write(rig.dir.path()).unwrap();
+    assert!(recovery::recover_all(rig.dir.path()).unwrap().is_empty());
+}

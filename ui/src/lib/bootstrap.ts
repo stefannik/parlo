@@ -153,7 +153,15 @@ export async function registerInteractions(): Promise<() => void> {
       }
     }
   }
-  const onVisibility = () => void b.setVisible(document.visibilityState === 'visible')
+  const onVisibility = () => {
+    void b.setVisible(document.visibilityState === 'visible')
+    if (document.visibilityState === 'visible' && !rec.active) void rec.refreshDevices()
+  }
+  // no polling: the shown input is re-read whenever the user comes back to the window (e.g. after switching AirPods off)
+  const onFocus = () => {
+    if (!rec.active) void rec.refreshDevices()
+  }
+  window.addEventListener('focus', onFocus)
   window.addEventListener('keydown', onKey)
   document.addEventListener('visibilitychange', onVisibility)
   void b.setVisible(document.visibilityState === 'visible')
@@ -162,5 +170,6 @@ export async function registerInteractions(): Promise<() => void> {
     off.forEach((f) => f())
     window.removeEventListener('keydown', onKey)
     document.removeEventListener('visibilitychange', onVisibility)
+    window.removeEventListener('focus', onFocus)
   }
 }

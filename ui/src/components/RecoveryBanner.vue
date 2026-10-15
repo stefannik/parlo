@@ -14,6 +14,7 @@ const speak = useSpeakStore()
 const toast = useToastStore()
 
 function title(r: RecoverableDto) {
+  if (r.kind === 'recording' && r.saved_on_quit) return `A recording (${formatClock(r.duration_ms)}, ${new Date(r.started_at).toLocaleString()}) was saved when you quit Parlo — it hasn’t been transcribed yet.`
   if (r.kind === 'recording') return `An interrupted recording (${formatClock(r.duration_ms)}, ${new Date(r.started_at).toLocaleString()}) was recovered.`
   if (r.kind === 'stt_job') return `Transcription of “${r.source_name}” was interrupted.`
   return `Speech generation was interrupted: “${r.text_preview.slice(0, 60)}${r.text_preview.length > 60 ? '…' : ''}”`

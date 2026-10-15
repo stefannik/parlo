@@ -3,13 +3,13 @@
 Run on the Mac with the bundled app. Tick with date + commit.
 
 ## Recording interruptions (BRIEF §8.2)
-- [ ] Close window while recording → recording continues; reopen reattaches
-- [ ] ⌘Q while recording → "Stop and save / Cancel" dialog
+- [x] Close window while recording → recording continues; reopen reattaches
+- [x] ⌘Q while recording → "Stop and save / Cancel" dialog (owner: dialog + save OK; the saved recording was not offered on relaunch → fixed: it now appears in the recovery banner as "saved when you quit — not yet transcribed"; re-verify)
 - [x] `kill -9` while recording → file recoverable and playable, 1.0 s lost (real mic, bundled app; `scripts/mac-kill9-test.sh`, 2026-10-15). Recovery *banner* look: UI pass pending
-- [ ] AirPods connect/disconnect (System default follows) → same file, gap marker, notice
-- [ ] Pinned device vanishes → falls back to default + notice
-- [ ] Screen lock 2 min → continues
-- [ ] Lid close / forced sleep → flush, resume on wake with gap marker
+- [x] AirPods connect/disconnect (System default follows) → same file, gap marker, notice
+- [x] Pinned device vanishes → falls back to default + notice
+- [x] Screen lock 2 min → continues
+- [x] Lid close / forced sleep → flush, resume on wake with gap marker
 - [ ] Disk nearly full → warning at < 2 GB, graceful stop at < 300 MB
 - [ ] Mic permission denied/revoked → guidance + button to System Settings (granted state + prompt verified 2026-10-15)
 - [ ] Muted mic > 10 s → inline warning

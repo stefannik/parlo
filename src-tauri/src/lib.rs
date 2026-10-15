@@ -215,9 +215,7 @@ fn request_quit(app: &AppHandle) {
         .show(move |stop| {
             if stop {
                 let state = app2.state::<Arc<AppState>>();
-                if let Some(h) = state.recorder.lock().unwrap().take() {
-                    let _ = h.stop();
-                }
+                commands::stop_recording_for_quit(&state);
                 state.quitting.store(true, Ordering::SeqCst);
                 app2.exit(0);
             }
@@ -375,13 +373,9 @@ pub fn run() {
         }
         #[cfg(target_os = "macos")]
         RunEvent::Reopen {
-            has_visible_windows,
+            has_visible_windows: false,
             ..
-        } => {
-            if !has_visible_windows {
-                ensure_main_window(app);
-            }
-        }
+        } => ensure_main_window(app),
         _ => {}
     });
 }

@@ -34,7 +34,10 @@ export const useRecorderStore = defineStore('recorder', () => {
     rms.value = ev.rms
     peak.value = ev.peak
     gaps.value = ev.gaps
-    if (ev.state === 'idle') banners.value = []
+    if (ev.state === 'idle') {
+      banners.value = []
+      void refreshDevices() // the default input may have changed during the recording (AirPods in/out)
+    }
   }
 
   function describe(w: RecorderWarningDto): RecorderBanner {
