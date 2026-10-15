@@ -466,12 +466,215 @@ fn script(app: &AppHandle, state: &Arc<AppState>, say: &dyn Fn(&str)) -> R<()> {
     Ok(())
 }
 
+/// `PARLO_SELFTEST=mic [PARLO_SELFTEST_SECONDS=8]`: the real microphone path inside the bundled app — TCC permission
+/// (shows the system prompt the first time), CoreAudio capture through cpal, the power assertion while recording, the
+/// frame count against the wall clock, and that the audio is not digital silence.
+fn mic_script(app: &AppHandle, say: &dyn Fn(&str)) -> R<()> {
+    let secs: u64 = std::env::var("PARLO_SELFTEST_SECONDS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(8);
+    say(&format!(
+        "mic permission before: {:?}",
+        c::mic_permission_status(st_of(app))
+    ));
+    let perm = ipc(
+        tauri::async_runtime::block_on(c::mic_permission_request(st_of(app))),
+        "mic_permission_request",
+    )?;
+    ensure(
+        matches!(perm, MicPermission::Granted),
+        format!("microphone permission not granted: {perm:?}"),
+    )?;
+    say("mic permission granted");
+    let devices = ipc(c::input_devices_list(st_of(app)), "input_devices_list")?;
+    say(&format!(
+        "input devices: {}",
+        devices
+            .iter()
+            .map(|d| d.name.clone())
+            .collect::<Vec<_>>()
+            .join(", ")
+    ));
+    let t0 = std::time::Instant::now();
+    let info = ipc(
+        c::recording_start(app.clone(), st_of(app), None),
+        "recording_start",
+    )?;
+    say(&format!("recording on {:?} at {} Hz", info.device, info.sample_rate));
+    std::thread::sleep(Duration::from_secs(2));
+    let during = String::from_utf8_lossy(
+        &std::process::Command::new("pmset")
+            .args(["-g", "assertions"])
+            .output()
+            .map_err(|e| e.to_string())?
+            .stdout,
+    )
+    .to_string();
+    let pid = std::process::id().to_string();
+    ensure(
+        during
+            .lines()
+            .any(|l| l.contains(&format!("pid {pid}")) && l.contains("PreventUserIdleSystemSleep")),
+        format!("no sleep assertion held while recording:\n{during}"),
+    )?;
+    say("power assertion held while recording (pmset -g assertions)");
+    ipc(c::recording_pause(app.clone(), st_of(app)), "recording_pause")?;
+    std::thread::sleep(Duration::from_secs(1));
+    ipc(c::recording_resume(app.clone(), st_of(app)), "recording_resume")?;
+    std::thread::sleep(Duration::from_secs(secs.saturating_sub(3).max(1)));
+    let out = ipc(c::recording_stop(app.clone(), st_of(app)), "recording_stop")?;
+    let wall_ms = t0.elapsed().as_millis() as i64;
+    say(&format!(
+        "recorded {} ms (wall {} ms incl. 1 s pause), {} gap marker(s)",
+        out.duration_ms,
+        wall_ms,
+        out.gaps.len()
+    ));
+    let pcm = parlo_core::audio::wav::PcmFile::open(std::path::Path::new(&out.wav_path))
+        .map_err(|e| e.to_string())?;
+    let mut buf = Vec::new();
+    pcm.read_f32(0, pcm.frames as usize, &mut buf)
+        .map_err(|e| e.to_string())?;
+    let peak = buf.iter().fold(0f32, |m, s| m.max(s.abs()));
+    let rms = (buf.iter().map(|s| s * s).sum::<f32>() / buf.len().max(1) as f32).sqrt();
+    say(&format!("audio peak {peak:.4}, rms {rms:.5}"));
+    // Pause closes the stream, so the file holds the recorded time only: wall minus the 1 s pause (± start-up latency).
+    let expect_ms = wall_ms - 1000;
+    ensure(
+        (out.duration_ms as i64 - expect_ms).abs() < 1500,
+        format!("duration {} ms vs expected ≈{expect_ms} ms", out.duration_ms),
+    )?;
+    ensure(peak > 0.0, "the recording is digital silence (muted mic or no permission?)")?;
+    // after the stop the assertion must be released
+    std::thread::sleep(Duration::from_millis(500));
+    let after = String::from_utf8_lossy(
+        &std::process::Command::new("pmset")
+            .args(["-g", "assertions"])
+            .output()
+            .map_err(|e| e.to_string())?
+            .stdout,
+    )
+    .to_string();
+    ensure(
+        !after
+            .lines()
+            .any(|l| l.contains(&format!("pid {pid}")) && l.contains("PreventUserIdleSystemSleep")),
+        "sleep assertion still held after the stop",
+    )?;
+    say("power assertion released after stop");
+    Ok(())
+}
+
+/// `PARLO_SELFTEST=lifecycle`: drives the window/job lifecycle for scripts/measure-idle-memory.sh, which samples memory
+/// at each `PHASE …` line: window open → window closed (webview destroyed) → window recreated → a TTS + STT job →
+/// idle timeout (`PARLO_IDLE_WAIT_S`, default 70 s). Needs the repo root as cwd for the fixture.
+fn lifecycle_script(app: &AppHandle, say: &dyn Fn(&str)) -> R<()> {
+    let phase = |name: &str, wait_s: u64| {
+        println!("PHASE {name}");
+        use std::io::Write;
+        let _ = std::io::stdout().flush();
+        std::thread::sleep(Duration::from_secs(wait_s));
+    };
+    phase("open", 20);
+    let w = app
+        .get_webview_window("main")
+        .ok_or("no main window at launch")?;
+    w.close().map_err(|e| e.to_string())?;
+    phase("closed", 25);
+    ensure(
+        app.get_webview_window("main").is_none(),
+        "the window still exists after close",
+    )?;
+    let a2 = app.clone();
+    app.run_on_main_thread(move || crate::ensure_main_window(&a2))
+        .map_err(|e| e.to_string())?;
+    phase("reopened", 15);
+    ensure(
+        app.get_webview_window("main").is_some(),
+        "the window was not recreated",
+    )?;
+    let (ch, rx) = channel::<TtsEventDto>();
+    ipc(
+        c::tts_start(
+            app.clone(),
+            st_of(app),
+            TtsRequest {
+                source: TtsSource::Text {
+                    text: "Hello from the Parlo lifecycle test. This is a short sentence.".into(),
+                },
+                voice: "george".into(),
+                quality: "fast".into(),
+            },
+            ch,
+        ),
+        "tts_start",
+    )?;
+    drain_tts(&rx, None)?;
+    let (ch, rx) = channel::<SttEventDto>();
+    ipc(
+        c::transcribe_start(
+            app.clone(),
+            st_of(app),
+            TranscribeRequest {
+                source: SttSource::Path {
+                    path: std::path::Path::new("fixtures/generated/synth/en_all.wav")
+                        .canonicalize()
+                        .map_err(|e| e.to_string())?
+                        .display()
+                        .to_string(),
+                },
+                language: "auto".into(),
+            },
+            ch,
+        ),
+        "transcribe_start",
+    )?;
+    loop {
+        match rx
+            .recv_timeout(Duration::from_secs(600))
+            .map_err(|e| e.to_string())?
+        {
+            SttEventDto::Done { .. } => break,
+            SttEventDto::Error { error } => return Err(error.message),
+            _ => {}
+        }
+    }
+    let wait: u64 = std::env::var("PARLO_IDLE_WAIT_S")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(70);
+    phase("job-done", 3);
+    let loaded = |tag: &str| {
+        let st = st_of(app);
+        println!("LOADED {tag} stt={} tts={}", st.stt.is_loaded(), st.tts.is_loaded());
+    };
+    loaded("job-done");
+    phase("after-job", wait / 2);
+    loaded("mid");
+    std::thread::sleep(Duration::from_secs(wait - wait / 2));
+    loaded("end");
+    say("lifecycle complete");
+    Ok(())
+}
+
+fn st_of(app: &AppHandle) -> tauri::State<'_, Arc<AppState>> {
+    app.state::<Arc<AppState>>()
+}
+
 pub fn spawn(app: AppHandle, state: Arc<AppState>) {
     let _ = std::thread::Builder::new()
         .name("selftest".into())
         .spawn(move || {
             let say = |m: &str| println!("  ✓ {m}");
-            match script(&app, &state, &say) {
+            let mode = std::env::var("PARLO_SELFTEST").unwrap_or_default();
+            match if mode == "mic" {
+                mic_script(&app, &say)
+            } else if mode == "lifecycle" {
+                lifecycle_script(&app, &say)
+            } else {
+                script(&app, &state, &say)
+            } {
                 Ok(()) => {
                     println!("PARLO_SELFTEST_OK");
                     // same as a normal quit: engines must be released before exit() (see RunEvent::Exit)

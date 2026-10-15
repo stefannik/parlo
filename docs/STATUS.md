@@ -1,6 +1,6 @@
 # Parlo — STATUS
 
-_Last updated: 2026-10-14 (cloud session 1 — finished; Mac session next)_
+_Last updated: 2026-10-15 (Mac session 1 — in progress, stopped for the night)_
 
 ## Needs owner
 _(nothing blocking so far. All needed domains are reachable: HF (incl. LFS/xethub), download.pytorch.org, GitHub assets, crates/npm/PyPI.)_
@@ -56,3 +56,36 @@ Test totals: `cargo test --workspace` 146+ tests pass (incl. real-engine `stt_re
 
 ## Pointer
 Everything that still needs macOS (A: gates incl. Metal & real recorder, B: platform implementations, C: window lifecycle/WKWebView, D: packaging/measurements, E: acceptance scenarios) is in **`docs/MAC_HANDOFF.md`** with a verification step per item.
+
+---
+
+# Mac session 1 (2026-10-15, M4 Pro / macOS 26.4.1) — IN PROGRESS, resume here
+
+## Resume checklist (do these first tomorrow)
+1. **Idle-after-job miss (open bug):** after a TTS+STT job and the 60 s idle unload, the main process stays at ≈ 580–614 MB footprint (baseline 28 MB; target +30). Engines DO unload (`LOADED end stt=false tts=false`); `vmmap` shows `MALLOC_LARGE (empty)` ≈ 482 MB still dirty/resident — libmalloc keeps freed large blocks cached and `malloc_zone_pressure_relief(NULL,0)` (in `MemoryRelief::relieve`, platform/system.rs) does not return them. Ideas: call relief on every zone from `malloc_get_all_zones`; `MallocLargeCacheSize=0`-style tuning (set env early in `main`, or `malloc_zone_*` API); or a global allocator that `munmap`s large blocks (e.g. tikv-jemallocator/mimalloc with decay 0); also the WebKit GPU helper jumps to 132 MB during a job and returns to 19 MB. Re-measure with `scripts/measure-idle-memory.sh` (≈ 3 min, prints a markdown table).
+2. **Owner steps are pending** (see "Needs owner" below). Then run: `scripts/mac-mic-test.sh 12` (real mic in the bundled app).
+3. Still to do from MAC_HANDOFF: A4 real recorder (AirPods, sleep/wake, 3 h soak), B6 real memory-pressure unload, C2–C9 + WKWebView UI review (light+dark), D2/D5 (signing note in README, optional sandbox eval), E scenarios 1–8, QA checklist, README (build-from-scratch, install to /Applications, signing note, data locations, tests/benchmarks, architecture), `cargo test --workspace` re-run on final tree, final report.
+
+## Done and verified on this Mac
+| What | Result |
+|---|---|
+| Toolchain | Rust 1.99, cmake, tauri-cli 2.12.3 (`cargo install tauri-cli --locked --version '^2'`), no `metal` compiler (CLT only) — whisper.cpp embeds shaders and compiles at runtime: **works** |
+| Fixtures on macOS | needed `brew install espeak-ng` (Bulgarian has no `say` voice), `brew install ffmpeg-full` (std ffmpeg lacks libvorbis/libopus/libvpx; script puts it first in PATH), `.venv` with python-docx+reportlab (script prefers it). FLEURS via `--only fleurs`; 2 h file via `--only edge --long2h` |
+| Baseline `cargo test --workspace` (arm64, CPU, default features) | all pass except 4 targets, all explained: `stt_fleurs` (my FLEURS download raced the test), `stt_pipeline::two_hour…` (needed `--long2h`), `stt_real` ×2 (small model vs `say` voices → C-014), `stt_vad` (real bug: span past EOF, fixed). After fixes `stt_real`, `stt_vad`, `stt_pipeline`, `stt_fleurs` pass (release + `whisper-metal`). **Re-run the full workspace once more on the final tree.** |
+| **A2 STT Metal** (turbo q8_0, 1 h MP3, 4 threads) | **115 s = 31× real time** (target ≥ 15×), peak RSS **1.13 GB** (≤ 1.5 GB), warm model load **0.29 s** (≤ 2 s); first-ever load 6.6 s (cold disk + shader compile). q5_0/f16 not re-measured. |
+| **A1 TTS** (see C-015) | Candle+Accelerate warm RTF **0.103** vs Python reference **0.105**, TTFA **28 ms**, load **58 ms**, peak RSS **650 MB**. Metal rejected. Listening verdict (`spike/tts-parity/listen.html`) still pending (owner). |
+| Bundle | `PARLO_SIGN_IDENTITY="Parlo Local Signing" scripts/build-app.sh [--skip-models]` → `dist/Parlo.app` 1.1 GB, arm64, min macOS 14, hardened runtime, audio-input entitlement, designated requirement pinned to the certificate leaf (stable across rebuilds). The cert shows `CSSMERR_TP_NOT_TRUSTED` in `find-identity -v` (normal for self-signed) but codesign works. |
+| App self-test in the bundle (`PARLO_SELFTEST=1`, real engines, PDFKit, M4A) | **PASS**, clean exit code 0 |
+| `parlo-macos` native tests (`cargo test -p parlo-macos`) | 9 pass: PDFKit snapshot + scanned + damaged, AudioToolbox M4A decodable ±100 ms, AVFoundation fallback (mov, m4a, caf, mp3), fallback error path, PowerGuard (`pmset -g assertions`), mic status, sleep/wake + memory-pressure sources created. (B1,B2,B3,B4 → verified on Mac; B5/B6/B7 partly, see MAC_HANDOFF) |
+| Offline (D4) `scripts/check-offline.sh --cli target/release/parlo-cli --app dist/Parlo.app` | **PASS**: CSP has only self/ipc/asset origins; CLI flows succeed inside a `sandbox-exec … (deny network*)` profile; app self-test with 21 `lsof` samples → no non-loopback sockets. NB: build the CLI with `--features parlo-core/whisper-metal,parlo-core/tts-accelerate` first. |
+| Idle memory (A3/D3), `scripts/measure-idle-memory.sh` | empty Tauri shell: **70 MB**; real UI window open **78 MB** (main 28 MB) ≤ 150 ✓; window closed **45.8 MB** ≤ 60 ✓ (WebContent exits; GPU+Networking helpers stay); window recreate works. (One first-launch reading of 222 MB had a 137 MB GPU helper; not reproduced in 4 later runs.) After-job: **FAIL, see checklist item 1.** |
+
+## Needs owner (batch — do when convenient, ~10 min)
+1. **Microphone (A4/B7):** in a Terminal run `cd ~/Projects/parlo && scripts/mac-mic-test.sh 12` — click **Allow** on the macOS prompt for “Parlo”, and talk for ~12 s. Expect `PARLO_SELFTEST_OK`. Afterwards run it again to confirm the permission survives (same signing identity).
+2. **Accessibility + Screen Recording for the app that hosts Claude/Terminal** (System Settings → Privacy & Security): lets me script window clicks and take WKWebView screenshots for the UI review. (Optional but saves a lot of manual checking; otherwise do the QA-CHECKLIST UI pass by hand.)
+3. **AirPods test (scenario 3):** tell me when you're ready; I'll start a 10-min recording via the app, you switch AirPods out/in, lock the screen 2 min, then close the lid once (sleep/wake).
+4. Optional: open `spike/tts-parity/listen.html` and note which voices/engine you prefer in DECISIONS C-012.
+
+## Uncommitted/local-only notes
+- Scratch: `/tmp/target-cpu`, `/tmp/target-acc` (benchmark builds), `/tmp/shell` (empty-shell app) — disposable.
+- `spike/tts-parity/.venv` (uv, py3.12, torch CPU) exists locally (gitignored).
