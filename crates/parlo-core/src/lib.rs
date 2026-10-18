@@ -1,5 +1,6 @@
 //! Parlo core: all logic, no Tauri dependency (BRIEF §5.1).
 pub mod audio;
+pub mod download;
 pub mod error;
 pub mod paths;
 

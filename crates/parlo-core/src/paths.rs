@@ -56,6 +56,10 @@ impl AppPaths {
     pub fn jobs(&self) -> PathBuf {
         self.data.join("jobs")
     }
+    /// audio fetched by "Transcribe from URL": `downloads/<id>/audio.<ext>` (kept while it is the current transcription)
+    pub fn downloads(&self) -> PathBuf {
+        self.data.join("downloads")
+    }
     pub fn settings_file(&self) -> PathBuf {
         self.data.join("settings.json")
     }

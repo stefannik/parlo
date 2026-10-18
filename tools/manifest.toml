@@ -1,0 +1,66 @@
+# Parlo build-time tool pins (scripts/fetch-tools.sh). Never commit the binaries (tools/yt-dlp/ is gitignored).
+# yt-dlp is the *downloader for "Transcribe from URL"* (DECISIONS C-021, C-022). It runs as a child process; Parlo itself
+# never opens a socket. Official standalone builds from https://github.com/yt-dlp/yt-dlp/releases — pinned by version +
+# SHA-256 (the release's own SHA2-256SUMS file; re-verified here on download). They already contain the EJS challenge
+# solver scripts, so no `--remote-components` download is ever needed; YouTube's JS challenges additionally need an
+# external runtime (deno) which is *not* bundled (see C-022).
+#
+# `variant`: onedir (default; zip, unpacked next to the executable, ~0.45 s start on Linux) or onefile (single file,
+# self-extracts on every launch, ~1.1 s start). Layout produced under tools/yt-dlp/: `yt-dlp` (+ `_internal/` for onedir).
+# `size` is the download size in bytes (optional).
+
+[meta]
+schema = 1
+generated = "2026-10-18"
+
+[yt-dlp]
+version = "2026.08.19"
+base_url = "https://github.com/yt-dlp/yt-dlp/releases/download"
+license = "Unlicense (yt-dlp); the bundled Python/libs keep their own licences (see the release notes)"
+dest_dir = "yt-dlp"
+
+# macOS: universal2 (arm64 + x86_64)
+[[yt-dlp.file]]
+platform = "macos"
+variant = "onefile"
+asset = "yt-dlp_macos"
+size = 37146048
+sha256 = "0f192b7ec147ab6288885d6351d9ab67367640029b4377576ef46dd79cf7b202"
+
+[[yt-dlp.file]]
+platform = "macos"
+variant = "onedir"
+asset = "yt-dlp_macos.zip"
+inner = "yt-dlp_macos"
+size = 53923637
+sha256 = "07e54b0865303c864006925913bce2604f8ee8cc6f18699bac9c309f9328a6d8"
+
+# Linux x86_64 (cloud / tests)
+[[yt-dlp.file]]
+platform = "linux-x86_64"
+variant = "onefile"
+asset = "yt-dlp_linux"
+size = 40446224
+sha256 = "58162f9bfdc27458ea47bfcb311cf47028f17d8154a8bf7d689861d46399230a"
+
+[[yt-dlp.file]]
+platform = "linux-x86_64"
+variant = "onedir"
+asset = "yt-dlp_linux.zip"
+inner = "yt-dlp_linux"
+size = 40516244
+sha256 = "32e72032766bef9199d99d15beb69fd52e46df8f8b06f0d8745db59e04d339e9"
+
+# Linux aarch64
+[[yt-dlp.file]]
+platform = "linux-aarch64"
+variant = "onefile"
+asset = "yt-dlp_linux_aarch64"
+sha256 = "b16e4dab368a816cd05d477d698a605a6ae87ccee1c8ffd38fa21d7254141fcc"
+
+[[yt-dlp.file]]
+platform = "linux-aarch64"
+variant = "onedir"
+asset = "yt-dlp_linux_aarch64.zip"
+inner = "yt-dlp_linux_aarch64"
+sha256 = "4e27ad43f3a34bacffd078694eb3edbb4e3b378e7da44edab2be02e98555516e"

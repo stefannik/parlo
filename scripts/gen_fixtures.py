@@ -2,7 +2,7 @@
 """Generate Parlo test fixtures (BRIEF §6.2, §14.1). OS-aware: espeak-ng (Linux) or `say` (macOS) for synthetic
 speech; ffmpeg for formats/noise/long files; FLEURS subset via scripts/fleurs_subset.py.
 
-Groups (--only a,b,...):  synth  formats  edge  text  fleurs   (default: synth,formats,edge,text)
+Groups (--only a,b,...):  synth  formats  edge  text  url  fleurs   (default: synth,formats,edge,text,url)
 Outputs:
   fixtures/generated/   (gitignored)  audio fixtures + refs.jsonl (reference transcripts)
   fixtures/text/        (committed, tiny) text-import inputs; expected snapshots are added by the importer tests
@@ -359,16 +359,37 @@ def make_pdfs():
     except ImportError:
         print("PIL missing: scanned.pdf skipped", file=sys.stderr)
 
+def g_url():
+    """Audio shaped like what "Transcribe from URL" downloads (served by scripts/fixture-server.py in the tests):
+    a podcast MP3 (ID3 + VBR-ish), a plain AAC m4a, and the two YouTube audio-only DASH shapes — fragmented MP4/AAC
+    (itag 140, `moof` boxes, no `moov` sample tables) and WebM/Opus (itag 251, Cues + unknown-size friendly)."""
+    src = GEN / "synth" / "en_all.wav"
+    if not src.exists():
+        g_synth()
+    d = GEN / "url"; d.mkdir(parents=True, exist_ok=True)
+    specs = {
+        "podcast_ep.mp3": ["-ar", 44100, "-ac", 1, "-c:a", "libmp3lame", "-b:a", "64k", "-id3v2_version", 3, "-metadata", "title=Episode 12: Local first"],
+        "episode.m4a": ["-ar", 44100, "-ac", 1, "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart"],
+        "yt_dash_140.m4a": ["-ar", 44100, "-ac", 2, "-c:a", "aac", "-b:a", "128k", "-f", "mp4",
+                            "-movflags", "frag_keyframe+empty_moov+default_base_moof"],
+        "yt_dash_251.webm": ["-ar", 48000, "-ac", 2, "-c:a", "libopus", "-b:a", "128k", "-f", "webm", "-dash", 1],
+    }
+    for name, args in specs.items():
+        out = d / name
+        if not out.exists():
+            ff("-i", src, *args, out)
+    print(f"url: {len(specs)} files")
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", default="synth,formats,edge,text")
+    ap.add_argument("--only", default="synth,formats,edge,text,url")
     ap.add_argument("--long2h", action="store_true")
     a = ap.parse_args()
     groups = a.only.split(",")
     for tool in ("ffmpeg", "ffprobe"):
         if not shutil.which(tool):
             sys.exit(f"{tool} not found (dev dependency; brew install ffmpeg / apt install ffmpeg)")
-    if "synth" in groups or "formats" in groups or "edge" in groups:
+    if "synth" in groups or "formats" in groups or "edge" in groups or "url" in groups:
         if not IS_MAC and not shutil.which("espeak-ng"):
             sys.exit("espeak-ng not found (apt install espeak-ng)")
     GEN.mkdir(parents=True, exist_ok=True)
@@ -376,6 +397,7 @@ def main():
     if "fleurs" in groups:
         subprocess.check_call(["uv", "run", "--no-project", "--with", "pyarrow", "--with", "huggingface_hub", "--with", "soundfile", "--with", "numpy", "--with", "scipy", "python", "-I", str(ROOT / "scripts/fleurs_subset.py")])
     if "formats" in groups: g_formats()
+    if "url" in groups: g_url()
     if "edge" in groups: g_edge()
     if a.long2h: g_long2h(a)
     if "text" in groups: g_text()

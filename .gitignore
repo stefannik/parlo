@@ -23,3 +23,6 @@ spike/stt-bench/tmp/
 
 # dev-only Hugging Face cache of the TTS comparison spike (GBs of weights)
 spike/tts-new/hf/
+
+# build-time tools (scripts/fetch-tools.sh)
+/tools/yt-dlp/
