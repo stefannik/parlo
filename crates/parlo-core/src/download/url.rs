@@ -78,6 +78,18 @@ pub fn file_name_of(url: &str) -> Option<String> {
     (!dec.is_empty()).then_some(dec)
 }
 
+/// True when `title` says nothing the link doesn't: yt-dlp's generic extractor (a plain file link) names the download
+/// after the file (`GLT9200094173`), and curl only has the fallback title.
+pub fn title_is_from_link(title: &str, url: &str) -> bool {
+    if title == fallback_title(url) {
+        return true;
+    }
+    file_name_of(url).is_some_and(|f| {
+        let stem = f.rsplit_once('.').map_or(f.as_str(), |(s, _)| s);
+        title == f || title == stem
+    })
+}
+
 /// Extension (lowercase, no dot) of the URL's path, if any.
 pub fn extension_of(url: &str) -> Option<String> {
     let name = file_name_of(url)?;
@@ -129,6 +141,20 @@ fn hex(c: u8) -> Option<u8> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn link_derived_titles_are_recognised() {
+        use super::title_is_from_link as f;
+        let u = "https://traffic.megaphone.fm/GLT9200094173.mp3";
+        assert!(f("GLT9200094173", u));
+        assert!(f("GLT9200094173.mp3", u));
+        assert!(f(&super::fallback_title(u), u));
+        assert!(!f(
+            "Honest Trailers | Casino Royale",
+            "https://www.youtube.com/watch?v=L_FTtfcMYU8"
+        ));
+        assert!(!f("Episode 12", u));
+    }
+
     use super::*;
 
     #[test]

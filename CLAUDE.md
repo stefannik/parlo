@@ -27,7 +27,7 @@ cargo check --target aarch64-apple-darwin -p parlo-core --no-default-features --
 
 # --- Tauri app + UI (src-tauri = crate parlo-app, binary `parlo`; ui/ = Vue 3 + Pinia + Vite)
 npm --prefix ui ci && npm --prefix ui run build            # vue-tsc + vite build (ui/dist)
-npm --prefix ui test                                       # vitest: stores, mock-backend contract, app shell (61 tests)
+npm --prefix ui test                                       # vitest: stores, mock-backend contract, app shell (94 tests)
 npm --prefix ui run lint && npm --prefix ui run typecheck && npm --prefix ui run check:contrast
 VITE_MOCK_BACKEND=1 npm --prefix ui run dev                # UI in a plain browser with fake engines/recorder (http://localhost:5173)
 PARLO_UPDATE_BINDINGS=1 cargo test -p parlo-app export_bindings   # regenerate ui/src/bindings.ts after changing src-tauri/src/ipc.rs (plain run = drift check)

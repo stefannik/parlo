@@ -577,6 +577,8 @@ impl Fetcher for YtDlpFetcher {
 
         let args = download_args(&flags, &ctx.url, &ctx.stage_dir);
         let mut last_progress_sent = std::time::Instant::now() - Duration::from_secs(1);
+        // the newest update the throttle held back — flushed at the end so the bar reaches 100 %
+        let mut held: Option<DownloadEvent> = None;
         let r = proc::run_streaming(
             proc::command(&self.path, &args, Some(&ctx.tmp_dir)),
             Live::Stdout,
@@ -590,21 +592,28 @@ impl Fetcher for YtDlpFetcher {
                     speed_bps,
                     eta_s,
                 } => {
+                    let ev = DownloadEvent::Progress {
+                        downloaded,
+                        total,
+                        speed_bps,
+                        eta_s,
+                    };
                     // ≤ 10 updates per second is plenty for a progress bar
                     if last_progress_sent.elapsed() >= Duration::from_millis(100) {
                         last_progress_sent = std::time::Instant::now();
-                        sink(DownloadEvent::Progress {
-                            downloaded,
-                            total,
-                            speed_bps,
-                            eta_s,
-                        });
+                        held = None;
+                        sink(ev);
+                    } else {
+                        held = Some(ev);
                     }
                 }
                 Line::Other => {}
             },
         )
         .map_err(|e| run_err(e, &self.path))?;
+        if let Some(ev) = held {
+            sink(ev);
+        }
         if !r.status.success() {
             return Err(classify(&r.stderr_text()));
         }

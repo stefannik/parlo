@@ -271,3 +271,34 @@ pub fn probe_info(path: &Path) -> Result<AudioInfo> {
         codec: format!("{:?}", params.codec),
     })
 }
+
+/// The title stored in the file's own tags (ID3 `TIT2`, MP4 `©nam`, Vorbis `TITLE`, …), if any. Reads only the
+/// container headers.
+pub fn tag_title(path: &Path) -> Option<String> {
+    use symphonia::core::meta::StandardTag;
+    let file = File::open(path).ok()?;
+    let mss = MediaSourceStream::new(Box::new(file), MediaSourceStreamOptions::default());
+    let mut hint = Hint::new();
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        hint.with_extension(ext);
+    }
+    let mut format = get_probe()
+        .probe(
+            &hint,
+            mss,
+            FormatOptions::default(),
+            MetadataOptions::default(),
+        )
+        .ok()?;
+    let mut md = format.metadata();
+    let rev = md.skip_to_latest()?;
+    rev.media
+        .tags
+        .iter()
+        .chain(rev.per_track.iter().flat_map(|t| t.metadata.tags.iter()))
+        .find_map(|t| match &t.std {
+            Some(StandardTag::TrackTitle(s)) => Some(s.trim().to_string()),
+            _ => None,
+        })
+        .filter(|s| !s.is_empty())
+}

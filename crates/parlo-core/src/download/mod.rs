@@ -236,9 +236,15 @@ pub fn download(
     let _ = std::fs::remove_dir_all(&stage);
     moved.map_err(io_err(&dest))?;
     let bytes = std::fs::metadata(&dest).map(|m| m.len()).unwrap_or(0);
+    // a podcast file's real name is in its tags ("Episode 12: …"), not in the link
+    let title = if url::title_is_from_link(&out.title, &url) {
+        crate::audio::decode::tag_title(&dest).unwrap_or(out.title)
+    } else {
+        out.title
+    };
     let d = Downloaded {
         path: dest,
-        title: out.title,
+        title,
         duration_s: out.duration_s,
         bytes,
         tool: out.tool,

@@ -155,21 +155,32 @@ pub fn run_streaming(
 
     let started = Instant::now();
     let mut outcome: Option<RunError> = None;
+    let mut handle = |l: String| {
+        if live == Live::Stderr {
+            // keep the live stream's lines in the tail as well (errors are usually in there)
+            let mut t = tail.lock().unwrap();
+            if t.len() >= STDERR_KEEP {
+                t.pop_front();
+            }
+            t.push_back(l.clone());
+        }
+        on_line(&l)
+    };
     loop {
         match rx.recv_timeout(Duration::from_millis(100)) {
-            Ok(Msg::Out(l)) => {
-                if live == Live::Stderr {
-                    // keep the live stream's lines in the tail as well (errors are usually in there)
-                    let mut t = tail.lock().unwrap();
-                    if t.len() >= STDERR_KEEP {
-                        t.pop_front();
-                    }
-                    t.push_back(l.clone());
-                }
-                on_line(&l)
-            }
+            Ok(Msg::Out(l)) => handle(l),
             Ok(Msg::OutEof) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
-            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                // The child is gone but a grandchild it left behind (a JS runtime, …) still holds the pipe open: don't
+                // wait for it. Kill the group so the reader sees EOF, then take whatever lines are still queued.
+                if matches!(child.try_wait(), Ok(Some(_))) {
+                    kill_group(pgid, libc::SIGKILL);
+                    while let Ok(Msg::Out(l)) = rx.recv_timeout(Duration::from_secs(2)) {
+                        handle(l);
+                    }
+                    break;
+                }
+            }
         }
         if cancel.load(Ordering::SeqCst) {
             outcome = Some(RunError::Cancelled);
@@ -229,11 +240,13 @@ pub fn run_capture(
 }
 
 /// Build a command with a clean, predictable environment for a downloader: nothing of the user's yt-dlp config is read
-/// (callers pass `--no-config`), temp files go under Parlo's cache, locale is UTF-8.
+/// (callers pass `--no-config`), temp files go under Parlo's cache, Python output is UTF-8.
 pub fn command(program: &Path, args: &[OsString], tmp_dir: Option<&Path>) -> Command {
     let mut c = Command::new(program);
     c.args(args);
-    c.env("LC_ALL", "C.UTF-8")
+    // Python's UTF-8 mode instead of forcing a locale (C.UTF-8 doesn't exist on every macOS, and the user's own
+    // locale is fine for everything else the child does)
+    c.env("PYTHONUTF8", "1")
         .env("PYTHONIOENCODING", "utf-8")
         .env("PYTHONUNBUFFERED", "1")
         .env_remove("YTDLP_NO_UPDATE");
@@ -307,6 +320,29 @@ mod tests {
             .map(|s| s.contains(") Z"))
             .unwrap_or(false);
         assert!(!alive || zombie, "grandchild {pid} survived the cancel");
+    }
+
+    #[test]
+    fn a_lingering_grandchild_does_not_block_completion() {
+        let cancel = AtomicBool::new(false);
+        let mut seen = vec![];
+        let started = Instant::now();
+        // the shell prints, leaves a background `sleep` holding stdout, and exits
+        let r = run_streaming(
+            sh("echo done; sleep 30 & exit 0"),
+            Live::Stdout,
+            &cancel,
+            None,
+            &mut |l| seen.push(l.to_string()),
+        )
+        .unwrap();
+        assert!(r.status.success());
+        assert_eq!(seen, vec!["done"]);
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "waited {:?} for the grandchild",
+            started.elapsed()
+        );
     }
 
     #[test]

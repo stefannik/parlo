@@ -24,9 +24,22 @@ pub fn fnv(b: &[u8]) -> u64 {
     })
 }
 
-/// Stable id of a download directory for a URL (`dl-<hash>`).
-pub fn id_for_url(url: &str) -> String {
-    format!("dl-{:016x}", fnv(url.as_bytes()))
+/// A fresh id for one download of `url` (`dl-<hash>`). Unique per download, not per link: the same link pasted again
+/// must never share a directory with the audio of the transcript on screen — a failed or cancelled retry deletes its
+/// own directory, and a finished one replaces the old download through the workspace (which removes it).
+pub fn new_id(url: &str) -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let salt = format!(
+        "{url}\0{nanos}\0{}\0{}",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    );
+    format!("dl-{:016x}", fnv(salt.as_bytes()))
 }
 
 /// Ids come from the UI: only our own shape is accepted, so they can never walk out of the downloads directory.
@@ -127,9 +140,10 @@ mod tests {
 
     #[test]
     fn ids_are_stable_and_safe() {
-        let a = id_for_url("https://a.com/x");
-        assert_eq!(a, id_for_url("https://a.com/x"));
-        assert_ne!(a, id_for_url("https://a.com/y"));
+        let a = new_id("https://a.com/x");
+        // the same link twice gets two directories (a retry never touches the audio already on screen)
+        assert_ne!(a, new_id("https://a.com/x"));
+        assert_ne!(a, new_id("https://a.com/y"));
         assert!(valid_id(&a));
         for bad in [
             "",
@@ -183,7 +197,7 @@ mod tests {
     fn media_path_to_id() {
         let t = tempfile::tempdir().unwrap();
         let paths = AppPaths::under(t.path());
-        let id = id_for_url("https://a.com/x");
+        let id = new_id("https://a.com/x");
         let d = mk(&paths, &id, true);
         assert_eq!(
             id_of_media_path(&paths, &d.join("audio.m4a")),

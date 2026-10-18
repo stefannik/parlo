@@ -1,12 +1,43 @@
 # Parlo — STATUS
 
-_Last updated: 2026-10-15 (Mac session 1 — in progress, stopped for the night)_
+_Last updated: 2026-10-19 (Transcribe from URL: built in the cloud, finished + verified on the Mac)_
 
 ## Needs owner
 _(nothing blocking so far. All needed domains are reachable: HF (incl. LFS/xethub), download.pytorch.org, GitHub assets, crates/npm/PyPI.)_
 
 ## Current phase
-**Cloud phases 0–5 complete.** Next: the Mac session (`docs/MAC_FINISH_PROMPT.md` → `docs/MAC_HANDOFF.md`, top to bottom).
+**Cloud phases 0–5 complete, Mac session 1 nearly done (below).** Newest feature: **Transcribe from URL** (2026-10-18/19).
+
+# Transcribe from URL (2026-10-19) — DECISIONS C-021 … C-025, MAC_HANDOFF §H
+Paste/⌘V/drop a YouTube (or any yt-dlp site) or podcast link on the Transcribe screen → audio-only download → the existing
+pipeline. Downloader chain: bundled yt-dlp 2026.08.19 (pinned + SHA-256, `scripts/fetch-tools.sh`, `Contents/Resources/yt-dlp`)
+→ Homebrew/system yt-dlp → `/usr/bin/curl` for plain audio links. Optional `--impersonate chrome` (on), `--cookies-from-browser`
+(off, installed browsers only), `--sleep-interval 5 --max-sleep-interval 15` (on). Parlo itself never opens a socket; only the
+child process does, and only for a download you start (C-021).
+
+**Verified on the Mac (M4 Pro), 2026-10-19**
+| What | Result |
+|---|---|
+| YouTube 7:32 (bundled yt-dlp, deno from Homebrew) | 7.3 MB m4a in **12.8 s** (7.2 s = rate-limit wait) |
+| …then transcribed (`parlo-cli transcribe`, CPU) | 452 s → 937 words, en, **51.8 s** (RTF 0.11) |
+| Podcast 53 min (`traffic.megaphone.fm` redirect) | 147 MB mp3 in **14.9 s** (8.6 s wait); title from the ID3 tag |
+| Bundled helper start | onedir **0.18 s** warm (7.2 s first launch, macOS scan); onefile ≈ 8 s every launch → onedir |
+| `scripts/build-app.sh` | builds; `codesign --verify --deep --strict` valid; helper adhoc+runtime, 2 entitlements; downloads from inside the bundle; +96 MB |
+| `--impersonate chrome` | available in bundled and Homebrew 2026.08.19 |
+| Gates (arm64) | `cargo test --workspace` **238 pass, 0 fail**; fmt, clippy `-D warnings`, bindings drift, UI 94 tests, lint, typecheck, build — all clean |
+
+Fixed on the Mac (C-025): bundle signing (framework symlinks, Helpers → Resources), same-link retry could delete the open
+transcript's audio (download ids are now per download), podcast title = file name, final progress update dropped, `LC_ALL`
+in the child env, a lingering grandchild blocked completion, URL tests assumed espeak's clip length.
+
+**Still for the owner, in the app** (MAC_HANDOFF §H): the in-app flow (⌘V → Downloading/Waiting → player → re-transcribe →
+Save audio), H7 fallback notice, H8 cookies (Chrome Keychain prompt, Safari Full Disk Access), H10 `check-offline.sh --app`,
+H11 dragging a link from a browser, H12 ⌘Q/`kill -9` mid-download (no quit confirmation for downloads yet — decide), H14 keep the
+5–15 s wait on for plain podcast links?
+
+**Known issue, not from this feature — flaky:** `tts_pocket::speech_round_trips_through_whisper_for_two_voices_and_both_qualities`
+failed once of two full runs on 2026-10-19 (george peak 1.042 > 1.0; sampling at temperature 0.3 since C-020 is random). Needs a
+look: limit/clip the output or re-check the bound — don't just widen it.
 
 ---
 

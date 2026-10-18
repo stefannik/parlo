@@ -147,6 +147,8 @@ fn real_ytdlp_progress_has_bytes_and_speed_from_a_throttled_server() {
     );
     let r = go(&srv.url("podcast_ep.mp3"), &ytdlp_only(), false);
     let d = r.result.unwrap();
+    // yt-dlp only knows the file name; the episode's real title comes from its ID3 tag
+    assert_eq!(d.title, "Episode 12: Local first");
     let prog: Vec<_> = r
         .events
         .iter()
@@ -232,6 +234,7 @@ fn real_curl_reports_progress() {
     );
     let r = go(&srv.url("podcast_ep.mp3"), &curl_only(), false);
     let d = r.result.unwrap();
+    assert_eq!(d.title, "Episode 12: Local first");
     let prog: Vec<_> = r
         .events
         .iter()

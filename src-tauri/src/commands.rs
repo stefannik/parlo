@@ -593,7 +593,7 @@ fn start_stt(
                 None => {
                     // ---- stage 0: download (URL jobs). Only a child process touches the network. ----
                     let url = url.clone().unwrap_or_default();
-                    let id = download::store::id_for_url(&url);
+                    let id = download::store::new_id(&url);
                     let job_dir = download::store::job_dir(&st2.paths, &id);
                     let _ = on_event.send(SttEventDto::Stage {
                         stage: "downloading".into(),
