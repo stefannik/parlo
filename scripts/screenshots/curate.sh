@@ -9,6 +9,7 @@ NAMES=(
   transcribe-empty transcribe-empty-mic-denied transcribe-recording transcribe-processing transcribe-result
   transcribe-error recovery-banner speak-empty speak-imported speak-voice-picker speak-generating speak-result
   speak-result-stale settings-general settings-storage settings-about
+  transcribe-url-waiting transcribe-url-downloading transcribe-url-result transcribe-url-error-login settings-downloads
 )
 for n in "${NAMES[@]}"; do
   for theme in light dark; do

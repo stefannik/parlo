@@ -200,7 +200,96 @@ const SHOTS = [
       await sleep(300)
     },
   },
-  ...['general', 'recording', 'transcription', 'speech', 'storage', 'about'].map((s) => ({
+  // ---- Transcribe from URL
+  {
+    name: 'transcribe-url-invalid',
+    query: '',
+    run: async (p) => {
+      await p.fill(tid('url-input'), 'youtube.com/watch?v=abc')
+      await p.click(tid('url-submit'))
+      await p.waitForSelector(tid('url-error'))
+      await sleep(300)
+    },
+  },
+  {
+    name: 'transcribe-url-pending',
+    query: '?pending=' + encodeURIComponent('https://www.youtube.com/watch?v=dQw4w9WgXcQ'),
+    run: async () => { await sleep(300) },
+  },
+  { name: 'transcribe-empty-downloads-off', query: '?downloads=off', run: async () => { await sleep(300) } },
+  {
+    name: 'transcribe-url-waiting',
+    query: '?timescale=1',
+    run: async (p) => {
+      await p.evaluate(() => window.__parloMock.control.hold('stt:waiting'))
+      await p.fill(tid('url-input'), 'https://www.youtube.com/watch?v=dQw4w9WgXcQ')
+      await p.click(tid('url-submit'))
+      await p.waitForSelector(tid('download-waiting'), { timeout: 20000 })
+      await sleep(1300)
+    },
+  },
+  {
+    name: 'transcribe-url-downloading',
+    query: '?timescale=1',
+    run: async (p) => {
+      await p.evaluate(() => window.__parloMock.control.hold('stt:download'))
+      await p.fill(tid('url-input'), 'https://www.youtube.com/watch?v=dQw4w9WgXcQ')
+      await p.click(tid('url-submit'))
+      await p.waitForFunction(() => /MB of/.test(document.querySelector('[data-testid="eta"]')?.textContent ?? ''), null, { timeout: 40000 })
+      await sleep(600)
+    },
+  },
+  {
+    name: 'transcribe-url-fallback',
+    query: '?timescale=1',
+    run: async (p) => {
+      await p.evaluate(() => window.__parloMock.control.hold('stt:download'))
+      await p.fill(tid('url-input'), 'https://www.youtube.com/fallback/watch?v=abc')
+      await p.click(tid('url-submit'))
+      await p.waitForSelector(tid('download-fallback'), { timeout: 20000 })
+      await p.waitForFunction(() => /MB of/.test(document.querySelector('[data-testid="eta"]')?.textContent ?? ''), null, { timeout: 40000 })
+      await sleep(500)
+    },
+  },
+  {
+    name: 'transcribe-url-transcribing',
+    query: '?timescale=0.3',
+    run: async (p) => {
+      await p.evaluate(() => window.__parloMock.control.hold('stt:transcribing'))
+      await p.fill(tid('url-input'), 'https://example.com/podcast/episode-12.mp3')
+      await p.click(tid('url-submit'))
+      await p.waitForSelector(tid('partial'), { timeout: 40000 })
+      await sleep(900)
+    },
+  },
+  {
+    name: 'transcribe-url-result',
+    query: '?timescale=0.05',
+    run: async (p) => {
+      await p.fill(tid('url-input'), 'https://www.youtube.com/watch?v=dQw4w9WgXcQ')
+      await p.click(tid('url-submit'))
+      await p.waitForSelector(tid('transcript-editor'), { timeout: 40000 })
+      await sleep(400)
+    },
+  },
+  ...[
+    ['live', 'https://www.youtube.com/live/abc'],
+    ['login', 'https://www.youtube.com/private/abc'],
+    ['drm', 'https://open.spotify.com/episode/4rOoJ6Egrf8K2IrywzwOMk'],
+    ['notfound', 'https://example.com/notfound/ep.mp3'],
+    ['offline', 'https://example.com/offline/ep.mp3'],
+    ['fail', 'https://example.com/fail/page'],
+  ].map(([n, u]) => ({
+    name: `transcribe-url-error-${n}`,
+    query: '?timescale=0.1',
+    run: async (p) => {
+      await p.fill(tid('url-input'), u)
+      await p.click(tid('url-submit'))
+      await p.waitForSelector(tid('error-card'), { timeout: 20000 })
+      await sleep(300)
+    },
+  })),
+  ...['general', 'recording', 'transcription', 'downloads', 'speech', 'storage', 'about'].map((s) => ({
     name: `settings-${s}`,
     query: '',
     run: async (p) => {
@@ -209,6 +298,26 @@ const SHOTS = [
       await sleep(500)
     },
   })),
+  {
+    name: 'settings-downloads-cookies',
+    query: '',
+    run: async (p) => {
+      await p.click(tid('open-settings'))
+      await p.click(tid('settings-downloads'))
+      await p.waitForSelector(tid('downloader-list'))
+      await p.check(tid('use-cookies'))
+      await sleep(500)
+    },
+  },
+  {
+    name: 'settings-downloads-off',
+    query: '?downloads=off',
+    run: async (p) => {
+      await p.click(tid('open-settings'))
+      await p.click(tid('settings-downloads'))
+      await sleep(500)
+    },
+  },
   {
     name: 'quit-while-recording',
     query: '',

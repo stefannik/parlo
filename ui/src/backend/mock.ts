@@ -490,7 +490,7 @@ export class MockBackend implements Backend {
       await this.sleep(400)
       if (i === 4 && rule?.[1] === 'disk_space') return fail('disk_space', rule[2], 'No space left on device (mock)')
       onEvent({ type: 'download_progress', downloaded_bytes: (totalBytes * i) / 10, total_bytes: totalBytes, speed_bps: 2_400_000, eta_s: Math.round(((10 - i) * 0.4 * 6) / 1) })
-      if (i === 5) await this.checkpoint('stt:downloading')
+      if (i === 5) await this.checkpoint('stt:download')
     }
     const id = `dl-${hash(url).padStart(16, '0')}`
     const path = `/mock/downloads/${id}/audio.m4a`

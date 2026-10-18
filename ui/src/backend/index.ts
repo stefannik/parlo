@@ -20,6 +20,10 @@ export async function initBackend(): Promise<Backend> {
     const mock = new MockBackend({
       timeScale: Number(params.get('timescale') ?? '1'),
       micPermission: (params.get('mic') as never) ?? 'granted',
+      // ?downloads=off starts with "Allow downloads from URLs" switched off (screenshots / manual testing)
+      downloadsOff: params.get('downloads') === 'off',
+      // ?pending=<url> starts with an interrupted download remembered
+      workspace: params.get('pending') ? { transcript: null, tts: null, pending_url: params.get('pending') } : undefined,
       // ?recover=1 starts with an interrupted recording and TTS job listed (screenshots / manual testing)
       recoverables:
         params.get('recover') === '1'

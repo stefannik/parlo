@@ -30,11 +30,12 @@ brew install cmake node rust                             # rust via rustup also 
 cargo install tauri-cli --locked --version '^2'          # `cargo tauri`; make sure ~/.cargo/bin is on PATH
 git clone <repo> ~/Projects/parlo && cd ~/Projects/parlo
 scripts/fetch-models.sh                                  # ~3.9 GB total, pinned + SHA-256 verified (build time only)
+scripts/fetch-tools.sh                                   # pinned yt-dlp for "Transcribe a link" (SHA-256 verified; build-app.sh runs it too)
 scripts/build-app.sh                                     # -> dist/Parlo.app (1.1 GB, arm64, min macOS 14)
 ```
 `build-app.sh` fetches/verifies the models, builds the UI, runs `cargo tauri build` with `whisper-metal` (Metal STT) and
 `tts-accelerate` (Candle + Apple Accelerate TTS — faster than Candle-Metal here, see DECISIONS C-015), copies the models
-into `Contents/Resources/models/`, and signs with the hardened runtime + microphone entitlement. Options: `--dmg`,
+into `Contents/Resources/models/`, puts the pinned yt-dlp into `Contents/Helpers/yt-dlp/` (signed with its own entitlements), and signs with the hardened runtime + microphone entitlement. Options: `--dmg`,
 `--no-metal`, `--skip-models`.
 
 ### Install
@@ -59,15 +60,19 @@ stable across builds.
 ## Data locations
 | | |
 |---|---|
-| `~/Library/Application Support/Parlo/` | `settings.json`, `workspace.json`, `recordings/` (never auto-deleted), `outputs/` (generated speech, cleanable in Settings), `jobs/<id>/` (checkpoints) |
+| `~/Library/Application Support/Parlo/` | `settings.json`, `workspace.json`, `recordings/` (never auto-deleted), `outputs/` (generated speech, cleanable in Settings), `downloads/<id>/` (audio fetched from a link — kept only while it is the current transcription), `jobs/<id>/` (checkpoints) |
 | `~/Library/Caches/Parlo/` | temporary decoded audio — safe to delete |
 | `~/Library/Logs/Parlo/` | rotating local logs |
 | `Parlo.app/Contents/Resources/models/` | Whisper large-v3-turbo q8_0, Silero VAD, PocketTTS English + Spanish models with 22 voices (`models/` in a dev checkout) |
 `PARLO_HOME=<dir>` redirects all three user directories (tests, self-tests).
 
+## Transcribe a link (the one thing that goes online)
+Parlo is offline. The single exception is **Transcribe a link** on the Transcribe screen: paste a URL (YouTube, a podcast episode or an audio file link; ⌘V works on that screen, and dragging a link in works too) and Parlo downloads the *audio only*, then runs the normal file pipeline. Nothing is ever uploaded, there is no telemetry, updater or background request, and **the Parlo process itself opens no sockets** — the download is made by a child process: the bundled yt-dlp, a system yt-dlp as the automatic fallback (`brew install yt-dlp`, which also brings deno for YouTube), or `/usr/bin/curl` for a plain audio-file link. Settings → Downloads can switch the feature off entirely (default on), choose a yt-dlp, use your signed-in browser cookies for private/age-restricted videos (default off; cookies are read on this Mac and sent only to the site), and toggle browser impersonation and the 5–15 s politeness delay. Live streams, DRM sites (Spotify, Netflix …) and playlists (only the first item is used) are not supported. Details and decisions: `docs/DECISIONS.md` C-021 – C-023.
+
 ## Tests, self-tests and benchmarks
 ```bash
-scripts/gen-fixtures.sh                    # synthetic speech (say/espeak-ng), formats, edge files; add --only fleurs / --long2h
+scripts/gen-fixtures.sh                    # synthetic speech (say/espeak-ng), formats, edge files, URL-download shapes; add --only fleurs / --long2h
+scripts/fetch-tools.sh                     # the pinned yt-dlp the URL tests and self-test run for real (tools/yt-dlp, not committed)
 cargo test --workspace                     # portable + real-engine tests (needs models + fixtures; macOS adds parlo-macos/tests/platform.rs)
 npm --prefix ui ci && npm --prefix ui test # UI stores/contract tests
 PARLO_TEST_WHISPER=ggml-small-q8_0.bin cargo test -p parlo-core --test stt_real   # quicker (weaker model) run
@@ -98,7 +103,7 @@ Measured numbers (with commit and date) are in `docs/STATUS.md`.
   `main.rs` sets `MallocLargeCache=0` (C-017) so freed model memory returns to the OS; engines are released on exit (C-016).
 * **`ui`** is Vue 3 + Pinia: all state machines in stores, one `Backend` interface (real adapter over the bindings, mock for
   browser development).
-* Inference: whisper.cpp (Metal) via `whisper-rs`; PocketTTS via the vendored Candle port (Accelerate). Zero network at runtime.
+* Inference: whisper.cpp (Metal) via `whisper-rs`; PocketTTS via the vendored Candle port (Accelerate). Offline: the only network use is a URL download you start ("Transcribe a link"); nothing is ever uploaded, and the Parlo process itself opens no sockets — a download runs in a child process (bundled yt-dlp, or curl).
 
 ## Licenses
 Parlo: MIT. Models: Whisper (MIT), Silero VAD (MIT), Kyutai PocketTTS (code MIT; weights CC-BY-4.0 — attribution: Kyutai). LAME (LGPL) is statically linked for MP3 export: fine for personal use, flag it before any distribution. See `models/manifest.toml` and the app's About pane.

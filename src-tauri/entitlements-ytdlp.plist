@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- ONLY for the bundled yt-dlp helper (Contents/Helpers/yt-dlp). No network entitlement: the app isn't sandboxed, and the
+       helper is a child process the user starts a download with (DECISIONS C-021). -->
+  <!-- PyInstaller's launcher dlopen()s the bundled Python and libraries; with library validation on, that only works for
+       libraries signed by the same Team ID — not for an ad-hoc signature. -->
+  <key>com.apple.security.cs.disable-library-validation</key><true/>
+  <!-- cffi / curl_cffi (browser impersonation) create libffi closures at runtime -->
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
+</dict>
+</plist>

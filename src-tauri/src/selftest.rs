@@ -464,6 +464,9 @@ fn script(app: &AppHandle, state: &Arc<AppState>, say: &dyn Fn(&str)) -> R<()> {
     )?;
     say("storage: usage, clear outputs, recordings protected; nothing left to recover");
     let _ = std::fs::remove_dir_all(&tmp);
+    if std::env::var_os("PARLO_SELFTEST_URL_BASE").is_some() {
+        url_script(app, say)?;
+    }
     Ok(())
 }
 
@@ -860,6 +863,289 @@ fn lc_isolated(app: &AppHandle, only: &str) -> R<()> {
     Ok(())
 }
 
+// ------------------------------------------------------------------------------------------------ Transcribe from URL
+/// Drain an STT event stream up to its terminal event.
+fn drain_stt(rx: &mpsc::Receiver<SttEventDto>) -> R<Vec<SttEventDto>> {
+    let mut out = Vec::new();
+    loop {
+        let e = rx.recv_timeout(Duration::from_secs(900)).map_err(|e| {
+            format!("STT event stream ended without a terminal event ({e}); got {out:?}")
+        })?;
+        let end = matches!(e, SttEventDto::Done { .. } | SttEventDto::Error { .. });
+        out.push(e);
+        if end {
+            return Ok(out);
+        }
+    }
+}
+
+fn start_stt_job(
+    app: &AppHandle,
+    source: SttSource,
+) -> R<(IpcResult<u32>, mpsc::Receiver<SttEventDto>)> {
+    let (ch, rx) = channel::<SttEventDto>();
+    let r = c::transcribe_start(
+        app.clone(),
+        st_of(app),
+        TranscribeRequest {
+            source,
+            language: "auto".into(),
+        },
+        ch,
+    );
+    Ok((r, rx))
+}
+
+fn dirs_in(p: &std::path::Path) -> Vec<String> {
+    let mut v: Vec<String> = std::fs::read_dir(p)
+        .map(|rd| {
+            rd.flatten()
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+    v.sort();
+    v
+}
+
+/// "Transcribe from URL" through the real command layer, the real yt-dlp child and a local HTTP server
+/// (`PARLO_SELFTEST_URL_BASE`; `PARLO_SELFTEST_URL_SLOW` is a throttled one for the cancel step).
+/// Parlo's own process never opens a socket — scripts/check-offline.sh samples that while this runs.
+fn url_script(app: &AppHandle, say: &dyn Fn(&str)) -> R<()> {
+    let st = || st_of(app);
+    let base = std::env::var("PARLO_SELFTEST_URL_BASE")
+        .map_err(|_| "PARLO_SELFTEST_URL_BASE not set (scripts/selftest-linux.sh starts the server)")?;
+    let slow = std::env::var("PARLO_SELFTEST_URL_SLOW").unwrap_or_else(|_| base.clone());
+    let paths = st().paths.clone();
+    let downloads = paths.downloads();
+    let url = |b: &str, f: &str| format!("{}/{f}", b.trim_end_matches('/'));
+    let blank = SettingsPatch::default();
+    // the rate-limit sleep (5–15 s) is covered by the download tests; keep this run quick
+    ipc(
+        c::settings_update(
+            st(),
+            SettingsPatch {
+                rate_limit_sleep: Some(false),
+                ..blank.clone()
+            },
+        ),
+        "settings_update",
+    )?;
+
+    // --- the tools -------------------------------------------------------------------------------------------------
+    let info = tauri::async_runtime::block_on(c::downloads_info(st()))
+        .map_err(|e| format!("downloads_info: {}", e.message))?;
+    let bundled = info.tools.iter().find(|t| t.kind == "bundled");
+    ensure(
+        bundled.is_some_and(|t| t.version.as_deref() == Some("2026.08.19") && t.impersonate == Some(true)),
+        format!("bundled yt-dlp: {info:?} (run scripts/fetch-tools.sh)"),
+    )?;
+    say("downloads_info: bundled yt-dlp 2026.08.19 with Chrome impersonation");
+
+    // --- 1 · happy path: download → the unchanged pipeline ------------------------------------------------------------
+    let link = url(&base, "podcast_ep.mp3");
+    let (r, rx) = start_stt_job(app, SttSource::Url { url: link.clone() })?;
+    ipc(r, "transcribe_start(url)")?;
+    ensure(
+        st().workspace.lock().unwrap().pending_url.as_deref() == Some(link.as_str()),
+        "the link should be remembered while the download runs",
+    )?;
+    let ev = drain_stt(&rx)?;
+    let stages: Vec<&str> = ev
+        .iter()
+        .filter_map(|e| match e {
+            SttEventDto::Stage { stage } => Some(stage.as_str()),
+            _ => None,
+        })
+        .collect();
+    ensure(stages.first() == Some(&"downloading"), format!("stages: {stages:?}"))?;
+    ensure(
+        ev.iter().any(|e| matches!(e, SttEventDto::DownloadInfo { title, .. } if title.contains("podcast_ep")))
+            && ev.iter().any(|e| matches!(e, SttEventDto::DownloadProgress { downloaded_bytes, .. } if *downloaded_bytes > 0))
+            && ev.iter().any(|e| matches!(e, SttEventDto::Downloaded { .. })),
+        format!("download events missing: {ev:?}"),
+    )?;
+    let Some(SttEventDto::Done { transcript: t1 }) = ev.last() else {
+        return Err(format!("URL job did not finish: {:?}", ev.last()));
+    };
+    ensure(
+        t1.language.as_deref() == Some("en") && t1.text.to_lowercase().contains("weather"),
+        format!("transcript: {t1:?}"),
+    )?;
+    let id1 = t1.download_id.clone().ok_or("no download_id on the transcript")?;
+    ensure(
+        t1.source_url.as_deref() == Some(link.as_str()),
+        format!("source_url: {:?}", t1.source_url),
+    )?;
+    let media1 = std::path::PathBuf::from(t1.media_path.clone().ok_or("no media_path")?);
+    ensure(
+        media1.exists() && media1.starts_with(&downloads) && media1.extension().is_some_and(|e| e == "mp3"),
+        format!("media: {}", media1.display()),
+    )?;
+    ensure(dirs_in(&downloads) == vec![id1.clone()], format!("downloads: {:?}", dirs_in(&downloads)))?;
+    ensure(
+        st().workspace.lock().unwrap().pending_url.is_none(),
+        "pending_url should be cleared once the audio is on disk",
+    )?;
+    let ws = c::workspace_get(app.clone(), st());
+    ensure(
+        ws.transcript.as_ref().is_some_and(|t| t.download_id.as_deref() == Some(id1.as_str()) && t.media_path.is_some() && t.source_url.is_some()),
+        format!("workspace: {ws:?}"),
+    )?;
+    ensure(
+        ipc(c::recoverables_list(st()), "recoverables_list")?.is_empty(),
+        "nothing should be recoverable after a clean URL job",
+    )?;
+    say(&format!(
+        "URL job: downloading → pipeline → \"{}\"; audio kept at downloads/{id1}; link forgotten",
+        t1.text.chars().take(40).collect::<String>()
+    ));
+
+    // --- 2 · export the downloaded audio -----------------------------------------------------------------------------
+    let tmp = std::env::temp_dir().join(format!("parlo-selftest-url-{}", std::process::id()));
+    std::fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
+    let dest = tmp.join("copy.mp3");
+    ipc(
+        tauri::async_runtime::block_on(c::export_download(st(), id1.clone(), None, dest.display().to_string())),
+        "export_download(original)",
+    )?;
+    ensure(
+        std::fs::read(&dest).map_err(|e| e.to_string())? == std::fs::read(&media1).map_err(|e| e.to_string())?,
+        "exported original differs from the download",
+    )?;
+    let wav = tmp.join("converted.wav");
+    ipc(
+        tauri::async_runtime::block_on(c::export_download(st(), id1.clone(), Some(AudioExportFormat::Wav), wav.display().to_string())),
+        "export_download(wav)",
+    )?;
+    let secs = hound::WavReader::open(&wav).map(|r| r.duration() as f64 / r.spec().sample_rate as f64).map_err(|e| e.to_string())?;
+    ensure((secs - 14.0).abs() < 1.0, format!("converted WAV is {secs:.1} s"))?;
+    say("export_download: original bytes identical, WAV conversion decodes (14 s)");
+
+    // --- 3 · re-transcribe from the kept audio (no second download) --------------------------------------------------
+    let (r, rx) = start_stt_job(app, SttSource::Path { path: media1.display().to_string() })?;
+    ipc(r, "transcribe_start(path in downloads)")?;
+    let ev = drain_stt(&rx)?;
+    let Some(SttEventDto::Done { transcript: t1b }) = ev.last() else {
+        return Err(format!("re-transcribe failed: {:?}", ev.last()));
+    };
+    ensure(
+        t1b.download_id.as_deref() == Some(id1.as_str()) && t1b.source_url.as_deref() == Some(link.as_str()) && media1.exists(),
+        format!("re-transcribe lost its link or audio: {t1b:?}"),
+    )?;
+    ensure(
+        !ev.iter().any(|e| matches!(e, SttEventDto::Stage { stage } if stage == "downloading")),
+        "re-transcribing must not download again",
+    )?;
+    say("re-transcribe from the kept audio: same link and download, no Downloading stage");
+
+    // --- 4 · a new transcription replaces the old one → the old download is deleted -------------------------------------
+    let link2 = url(&base, "episode.m4a");
+    let (r, rx) = start_stt_job(app, SttSource::Url { url: link2.clone() })?;
+    ipc(r, "transcribe_start(url 2)")?;
+    let ev = drain_stt(&rx)?;
+    let Some(SttEventDto::Done { transcript: t2 }) = ev.last() else {
+        return Err(format!("second URL job failed: {:?}", ev.last()));
+    };
+    let id2 = t2.download_id.clone().ok_or("no download_id")?;
+    ensure(id2 != id1, "different links must get different download dirs")?;
+    ensure(
+        dirs_in(&downloads) == vec![id2.clone()] && !media1.exists(),
+        format!("old download should be gone: {:?}", dirs_in(&downloads)),
+    )?;
+    say("a replaced transcription deletes its downloaded audio");
+
+    // --- 5 · cancel during the download behaves like a job cancel ----------------------------------------------------------
+    let (r, rx) = start_stt_job(app, SttSource::Url { url: url(&slow, "podcast_ep.mp3") })?;
+    let job = ipc(r, "transcribe_start(slow url)")?;
+    let started = std::time::Instant::now();
+    let mut cancelled_at = None;
+    let mut ev = Vec::new();
+    loop {
+        let e = rx.recv_timeout(Duration::from_secs(120)).map_err(|e| format!("cancel step: {e}; got {ev:?}"))?;
+        if matches!(&e, SttEventDto::DownloadProgress { downloaded_bytes, .. } if *downloaded_bytes > 0) && cancelled_at.is_none() {
+            c::job_cancel(st(), job);
+            cancelled_at = Some(started.elapsed());
+        }
+        let end = matches!(e, SttEventDto::Done { .. } | SttEventDto::Error { .. });
+        ev.push(e);
+        if end {
+            break;
+        }
+    }
+    ensure(
+        matches!(ev.last(), Some(SttEventDto::Error { error }) if error.code == "cancelled"),
+        format!("cancel should end with a cancelled error: {:?}", ev.last()),
+    )?;
+    ensure(
+        !ev.iter().any(|e| matches!(e, SttEventDto::Downloaded { .. })),
+        "a cancelled download must not complete",
+    )?;
+    ensure(dirs_in(&downloads) == vec![id2.clone()], format!("cancel left files behind: {:?}", dirs_in(&downloads)))?;
+    ensure(
+        dirs_in(&paths.jobs()).iter().all(|j| !j.starts_with("url-")),
+        format!("cancel left a job dir: {:?}", dirs_in(&paths.jobs())),
+    )?;
+    ensure(
+        st().workspace.lock().unwrap().pending_url.is_none(),
+        "an explicit cancel forgets the link",
+    )?;
+    say(&format!("cancel mid-download: cancelled event, no partial file, no job dir (cancel→end {:?})", started.elapsed() - cancelled_at.unwrap_or_default()));
+
+    // --- 6 · errors keep the link and leave nothing behind ---------------------------------------------------------------
+    for (path, code) in [("status/404", "download_not_found"), ("html/page", "download_failed")] {
+        let bad = url(&base, path);
+        let (r, rx) = start_stt_job(app, SttSource::Url { url: bad.clone() })?;
+        ipc(r, "transcribe_start(bad url)")?;
+        let ev = drain_stt(&rx)?;
+        ensure(
+            matches!(ev.last(), Some(SttEventDto::Error { error }) if error.code == code),
+            format!("{path}: expected {code}, got {:?}", ev.last()),
+        )?;
+        ensure(
+            st().workspace.lock().unwrap().pending_url.as_deref() == Some(bad.as_str()),
+            format!("{path}: the link should stay for a retry"),
+        )?;
+        ensure(dirs_in(&downloads) == vec![id2.clone()], format!("{path}: left files: {:?}", dirs_in(&downloads)))?;
+    }
+    let (r, _rx) = start_stt_job(app, SttSource::Url { url: "ftp://example.com/a.mp3".into() })?;
+    ensure(matches!(&r, Err(e) if e.code == "invalid_url"), format!("ftp:// should be refused: {r:?}"))?;
+    say("errors: 404 → not found, web page → install-yt-dlp message, ftp:// refused; link kept, nothing left on disk");
+
+    // --- 7 · the off switch ----------------------------------------------------------------------------------------------
+    ipc(
+        c::settings_update(st(), SettingsPatch { allow_downloads: Some(false), ..blank.clone() }),
+        "settings_update",
+    )?;
+    let (r, _rx) = start_stt_job(app, SttSource::Url { url: link.clone() })?;
+    ensure(matches!(&r, Err(e) if e.code == "download_disabled"), format!("off switch: {r:?}"))?;
+    ensure(
+        tauri::async_runtime::block_on(c::downloads_info(st())).is_err(),
+        "downloads_info should refuse while downloads are off",
+    )?;
+    ipc(
+        c::settings_update(st(), SettingsPatch { allow_downloads: Some(true), ..blank.clone() }),
+        "settings_update",
+    )?;
+    say("\"Allow downloads from URLs\" off: transcribe_start(url) and downloads_info refuse");
+
+    // --- 8 · cleanup: orphan sweep, then clearing the transcript -------------------------------------------------------------
+    let orphan = downloads.join("dl-aaaaaaaaaaaaaaaa");
+    std::fs::create_dir_all(orphan.join(".dl")).map_err(|e| e.to_string())?;
+    std::fs::write(orphan.join(".dl/media.m4a.part"), b"half").map_err(|e| e.to_string())?;
+    std::fs::write(downloads.join("dl-bbbbbbbbbbbbbbbb.stray"), b"x").map_err(|e| e.to_string())?;
+    c::sweep_downloads(&st());
+    ensure(dirs_in(&downloads) == vec![id2.clone()], format!("sweep: {:?}", dirs_in(&downloads)))?;
+    ipc(
+        c::workspace_update(st(), WorkspacePatch { clear_transcript: true, ..Default::default() }),
+        "workspace_update",
+    )?;
+    ensure(dirs_in(&downloads).is_empty(), format!("clearing the transcript should delete its audio: {:?}", dirs_in(&downloads)))?;
+    say("orphan sweep removed a partial download + stray file; clearing the transcript deleted its audio");
+    let _ = std::fs::remove_dir_all(&tmp);
+    Ok(())
+}
+
 fn st_of(app: &AppHandle) -> tauri::State<'_, Arc<AppState>> {
     app.state::<Arc<AppState>>()
 }
@@ -880,6 +1166,8 @@ pub fn spawn(app: AppHandle, state: Arc<AppState>) {
                 pressure_script(&app, &say)
             } else if mode == "lifecycle" {
                 lifecycle_script(&app, &say)
+            } else if mode == "url" {
+                url_script(&app, &say)
             } else {
                 script(&app, &state, &say)
             } {

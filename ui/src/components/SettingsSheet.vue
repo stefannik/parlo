@@ -325,7 +325,7 @@ function pick<T extends string>(e: Event): T {
             <div v-else class="group">
               <h2>About</h2>
               <p><strong>Parlo</strong> {{ app.info?.version }}</p>
-              <p class="privacy"><Icon name="check" :size="14" /> Parlo never connects to the internet. All speech processing happens on this Mac.</p>
+              <p class="privacy"><Icon name="check" :size="14" /> Parlo works offline. The only time it goes online is a download you start from a link, and nothing is ever uploaded. All speech processing happens on this Mac.</p>
               <dl class="about selectable">
                 <dt>Speech to text</dt><dd>{{ app.info?.stt_engine }}</dd>
                 <dt>Text to speech</dt><dd>{{ app.info?.tts_engine }}</dd>

@@ -3,6 +3,10 @@
 #   Linux (cloud):  runs `parlo-cli` flows inside a network-less namespace (unshare -rn); they must succeed.
 #   macOS (Mac):    deny-network sandbox for the CLI flows + `lsof` sampling of the app's full self-test; asserts the
 #                   frontend CSP only allows self + IPC + asset protocols.
+# "Transcribe from URL" (DECISIONS C-021) is the one network use, started by the user and made by a child process (yt-dlp /
+# curl): the Parlo process itself must still open zero sockets. Linux: the app's self-test runs a URL job against a local HTTP
+# server while scripts/sample-sockets.py samples /proc/<pid>/fd — Parlo's own PID: none; the downloader child: some (so the
+# sampler is proven to see sockets). Every other flow runs inside `unshare -rn` (no network at all) and must still succeed.
 # Usage: scripts/check-offline.sh [--cli target/release/parlo-cli] [--app dist/Parlo.app]
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -26,9 +30,22 @@ if [[ "$(uname)" == "Linux" ]]; then
   APP_BIN="${APP_BIN:-target/debug/parlo}"
   if [[ -x "$APP_BIN" ]] && command -v xvfb-run >/dev/null; then
     PARLO_SMOKE_HOLD_MS=300 unshare -rn scripts/smoke-linux.sh "$APP_BIN" | grep -q PARLO_SMOKE_OK && echo "OK: app smoke run succeeded with no network"
-    # the strongest proof: the whole command layer (STT, TTS, export, storage) with the real engines, no network namespace
+    # the strongest proof: the whole command layer (STT, TTS, export, storage) with the real engines, no network namespace —
+    # and, sampled, not one socket in the Parlo process
     if [[ "${PARLO_OFFLINE_FULL:-0}" == "1" ]]; then
-      unshare -rn scripts/selftest-linux.sh "$APP_BIN" >/dev/null && echo "OK: app self-test (real engines) succeeded with no network"
+      SOCK="$(mktemp)"
+      unshare -rn env PARLO_SELFTEST_NO_URL=1 PARLO_SAMPLE_SOCKETS="$SOCK" scripts/selftest-linux.sh "$APP_BIN" >/dev/null && echo "OK: app self-test (real engines) succeeded with no network"
+      python3 -I scripts/check-sockets.py "$SOCK" --expect-no-child-sockets && echo "OK: every existing flow — zero sockets in the Parlo process"
+      rm -f "$SOCK"
+    fi
+    # URL jobs: a real download (bundled yt-dlp, local HTTP server) through the real app command layer
+    if [[ -x tools/yt-dlp/yt-dlp && -f fixtures/generated/url/podcast_ep.mp3 && -f models/whisper/ggml-small-q8_0.bin ]]; then
+      SOCK="$(mktemp)"
+      PARLO_SELFTEST=url PARLO_SAMPLE_SOCKETS="$SOCK" scripts/selftest-linux.sh "$APP_BIN" >/dev/null && echo "OK: URL job (download → transcribe → cancel → errors) succeeded"
+      python3 -I scripts/check-sockets.py "$SOCK" --expect-downloader-sockets && echo "OK: URL job — Parlo's own PID opened zero sockets; only the downloader child did"
+      rm -f "$SOCK"
+    else
+      echo "(URL job check skipped: needs scripts/fetch-tools.sh, scripts/gen-fixtures.sh --only synth,url and the small Whisper model)"
     fi
   else
     echo "(app smoke skipped: build it with cargo build -p parlo-app --features tauri/custom-protocol)"

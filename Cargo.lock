@@ -4030,6 +4030,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "crossbeam-channel",
+ "hound",
  "parlo-core",
  "parlo-macos",
  "serde",

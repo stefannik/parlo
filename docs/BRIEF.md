@@ -13,7 +13,7 @@ Parlo is a small, fully local macOS app that does two things well:
 1. **Speech → Text.** Drop an audio/video file *or* record from the microphone (minutes to multiple hours), and get an accurate transcript in the spoken language (auto-detected, multilingual).
 2. **Text → Speech.** Paste text *or* import a document (.txt/.md/.docx/.pdf/.epub, up to book length), pick a voice, and get natural English speech you can play and export (WAV / M4A / MP3).
 
-No network at runtime, no cloud models, no accounts. It must feel like a polished native Mac utility, use almost no RAM when idle, and **never lose a recording**.
+Offline; the only network use is a URL download you start; nothing is ever uploaded. No cloud models, no accounts. (Amended 2026-10-18, DECISIONS C-021: the original wording was "no network at runtime".) It must feel like a polished native Mac utility, use almost no RAM when idle, and **never lose a recording**.
 
 **Stack (decided):** Tauri v2 (Rust) + Vue 3 (Composition API, `<script setup>`) + TypeScript. Inference is Rust-native: **whisper.cpp** (via `whisper-rs`, Metal) for STT and **Kyutai PocketTTS** for TTS through a Rust runtime. Python is used only for dev tooling. It ships in the product only if the TTS parity gate in §6 fails, and then only as an on-demand TTS sidecar.
 
@@ -29,7 +29,7 @@ No network at runtime, no cloud models, no accounts. It must feel like a polishe
 - **G3 — Same TTS experience as ctric.** Same model family, same voices, same parameters, at least the same speed. Long documents are chunked and can be listened to while they generate.
 - **G4 — Idle is (nearly) free.** No models in memory, no timers, no polling, no background work when the user isn't doing anything.
 - **G5 — Simple, modern, delightful UX.** Two clear modes, obvious primary actions, honest progress, helpful errors.
-- **G6 — 100% offline at runtime.** Zero outbound network connections, verified.
+- **G6 — Offline; the only network use is a URL download you start; nothing is ever uploaded** ("Transcribe from URL", DECISIONS C-021/C-022). No telemetry, no updater, no background requests. The Parlo process itself opens **zero sockets** — a download runs in a child process (yt-dlp, or curl for a plain audio file) — verified by `scripts/check-offline.sh`.
 
 ### 1.2 Non-goals (v1)
 Live/streaming transcription, history library, menu-bar mode and global hotkey, timestamps/SRT/VTT export, system-audio capture, voice cloning and custom voices, non-English TTS, translation, speaker diarization, OCR for scanned PDFs, Intel Macs, notarized public distribution, Windows/Linux. See §17 "Later".
@@ -165,7 +165,7 @@ On launch, if a recording or job was interrupted (crash, power loss), a banner o
 ### 5.2 Principles (load-bearing; log any departure in `docs/DECISIONS.md`)
 1. **Never lose user data.** Audio and text are persisted *before* being shown, and every destructive action is confirmed or undoable.
 2. **Idle is free.** Nothing loaded, scheduled, animating or polling when idle. Models are loaded lazily and unloaded on a timer or on memory pressure.
-3. **Offline by construction.** No HTTP client in the product's dependency graph where avoidable, a strict CSP, no updater, no telemetry.
+3. **Offline by construction.** Offline; the only network use is a URL download you start; nothing is ever uploaded. No HTTP client in the product's dependency graph (a download is made by a child process: yt-dlp, or `/usr/bin/curl` for a plain audio file), a strict CSP that the webview's network access never needs, no updater, no telemetry. "Allow downloads from URLs" (Settings, default on) switches even that off.
 4. **Native where it matters.** Audio capture, decoding, encoding, PDF text and power/sleep handling live in Rust/macOS APIs. The webview is UI only.
 5. **Engines behind traits.** STT/TTS backends are swappable without touching UI or job code.
 6. **Bounded memory.** Every pipeline streams through disk with fixed-size buffers. RAM must not scale with input length.
@@ -462,9 +462,10 @@ A calm, native-feeling macOS utility: think Voice Memos crossed with a minimal w
 - Lean dependencies: Vue, Pinia, a headless primitives library for accessible Select/Dialog/Slider/Menu if needed (e.g. Reka UI), and tree-shaken icons (e.g. `lucide-vue-next`). No CSS framework is required; the agent may use one if it stays small. No web fonts, no CDN, nothing remote.
 
 ### 11.2 Transcribe view states
-1. **Empty:** two large cards side by side.
+1. **Empty:** three large cards side by side (two when downloads are switched off).
    - **Record** shows a big mic button, the current input device and the permission state.
    - **Transcribe a file** is a drop zone with "Choose file…" and the supported formats in small text.
+   - **Transcribe a link** (DECISIONS C-021) has a URL field and a Transcribe button; ⌘V of a link on this screen and a link dragged from a browser start it too. The processing view gets a first stage, **Downloading** (percent, bytes, speed, ETA; "Waiting N s" during the rate-limit sleep; a notice when the system yt-dlp took over); everything after it is the normal file pipeline.
    - Under the cards: "Language: Auto-detect ▾".
 2. **Recording:** a focused layout with a large timer, level meter, device, "Saved continuously ✓", Pause, **Stop & Transcribe**, and Discard. Warnings appear as inline banners (§8.2).
 3. **Processing:** the source name and duration, then a stage list with the current stage highlighted, a progress bar with % and ETA, and Cancel. Paragraphs stream in below. "Loading speech model…" is shown when that's what's happening.
@@ -481,9 +482,10 @@ A calm, native-feeling macOS utility: think Voice Memos crossed with a minimal w
 - **General:** appearance, model unload timeout, performance mode.
 - **Recording:** input device (System default / specific), recording retention, open recordings folder.
 - **Transcription:** default language (Auto / list).
+- **Downloads:** "Allow downloads from URLs" (default on), the downloader in use (bundled / system path + version, deno found?), system yt-dlp path override, "Use browser cookies" (default off) with a picker of the installed browsers, browser impersonation (default on), rate-limit sleep 5–15 s (default on).
 - **Speech:** default voice, default speed, quality (Standard/Fast).
 - **Storage:** disk usage per category, clear outputs and caches.
-- **About:** versions, engines, model names/revisions, licenses and attributions, "Parlo never connects to the internet", and a "Copy diagnostics" button (versions + the last 200 log lines to the clipboard).
+- **About:** versions, engines, model names/revisions, licenses and attributions, "Parlo works offline; the only network use is a download you start; nothing is ever uploaded", and a "Copy diagnostics" button (versions + the last 200 log lines to the clipboard).
 
 ### 11.5 Global interactions
 - Drag-and-drop anywhere in the window (use Tauri's native drag-drop events to get file paths). Audio/video goes to Transcribe; documents go to Speak (auto-switch).
@@ -519,13 +521,13 @@ Provide a **mock IPC layer** (`VITE_MOCK_BACKEND=1`) so the UI runs in a normal 
 | Return to idle after a job | RAM back within +30 MB of baseline within timeout + 5 s |
 | STT / TTS / recording | see §7.4, §9.5, §8.4 |
 | App bundle size | informational (~1–1.3 GB with models); no hard limit |
-| Network | **zero** sockets opened at runtime |
+| Network | **zero** sockets opened by the Parlo process; the only traffic is a user-started URL download, made by a child process |
 
 If §6.3 shows the bare shell can't meet the idle targets, re-baseline to shell + 20 MB and document why.
 
 ### 12.2 Measurement scripts (required)
 - `scripts/measure-idle-memory.sh`: launch the bundled app, wait for idle (and for model unload when testing after a job), then sum **physical footprint** (`footprint` CLI) for the Parlo process and every WebKit helper process (WebContent, Networking, GPU) attributable to it. The agent must find a reliable attribution method, e.g. the responsible-PID relationship or process-set diffing in a controlled run, and document it. Results go in `docs/STATUS.md` with date and commit.
-- `scripts/check-offline.sh`: exercise every flow through `parlo-cli` and the app while sampling `lsof -i -a -p <pids>` (and/or `nettop`). Pass = no internet sockets. Also assert that the frontend CSP allows only self, IPC and asset protocols.
+- `scripts/check-offline.sh`: exercise every flow through `parlo-cli` and the app while sampling `lsof -i -a -p <pids>` (and/or `nettop`). Pass = no internet sockets in the Parlo process (for a URL job the *downloader child* may — and must — open its own; assert that Parlo's own PID did not). Also assert that the frontend CSP allows only self, IPC and asset protocols.
 - `parlo-cli bench stt|tts|record` subcommands print RTF, TTFA, peak RSS and load times.
 
 ---
@@ -538,7 +540,7 @@ If §6.3 shows the bare shell can't meet the idle targets, re-baseline to shell 
   - **Important:** an ad-hoc signature changes on every build, so macOS (TCC) forgets the microphone permission after each rebuild.
   - Document a one-time optional step in the README for the owner: create a self-signed "Parlo Local Signing" code-signing certificate in Keychain Access, so the mic permission survives rebuilds.
   - The app must handle the "not determined" state gracefully at all times.
-- App Sandbox: **off** for v1 (personal use). Time-boxed *Could*: evaluate sandbox **without** the network entitlement as an OS-enforced offline guarantee. Adopt it only if drag-drop, dialogs, recordings, exports and WebKit all work. Log the result.
+- App Sandbox: **off** for v1 (personal use). Time-boxed *Could*: evaluate sandbox **without** the network entitlement as an OS-enforced offline guarantee (moot since C-021: a sandboxed downloader child would need the network entitlement). Adopt it only if drag-drop, dialogs, recordings, exports and WebKit all work. Log the result.
 - Toolchains: see §5.6. On the Mac: Command Line Tools only (full Xcode **not** installed). Metal shaders must compile at runtime, which whisper.cpp/Candle do by default — verify. `cmake` may be installed via Homebrew. ffmpeg is for dev fixtures only, never bundled. In the cloud, apt packages come from the environment's setup script (`docs/CLOUD_SETUP.md`); the agent may also `apt install` mid-session, but those installs don't persist.
 - **Models:** `scripts/fetch-models.sh` reads `models/manifest.toml` (name, source URL with pinned revision, sha256, size, license) and downloads at **build time only**. PocketTTS files come from Hugging Face at the pinned revisions and SHA-256s in §3.2. Whisper GGML comes from `ggerganov/whisper.cpp` on HF (e.g. `ggml-large-v3-turbo-q8_0.bin`), Silero VAD GGML from `ggml-org/whisper-vad`. Pin revisions, and record SHA-256 on first download. The script is idempotent: it skips verified files, resumes partial downloads, and can fetch a subset (e.g. `--only pockettts`) to save time in short cloud sessions. **Model files are never committed to git.**
 - Licenses: record each model's and dependency's license in About and `models/manifest.toml`. PocketTTS code is MIT and its weights CC-BY-4.0 (check the voices' licenses); Whisper is MIT. LAME is LGPL, which is fine for personal use (flag it for any future distribution).
@@ -612,7 +614,7 @@ Within a phase, the agent orders the work itself. Across phases, keep the order 
 - **Long-running work in the cloud:** foreground commands time out after 2–10 min. Run long builds, benchmarks and soaks in the background, writing logs to files, and check on them. Split big benchmark runs into resumable batches that write partial results to disk.
 - **Don't:**
   - look for or depend on the original ctric repo (use `docs/reference/ctric/`);
-  - add any runtime network feature (updater, telemetry, crash upload, remote fonts/CDNs);
+  - add any runtime network feature other than the user-started URL download (updater, telemetry, crash upload, remote fonts/CDNs, background requests), or any HTTP client to the Parlo process;
   - use Electron;
   - use the webview `MediaRecorder` for recording;
   - load models at startup;
