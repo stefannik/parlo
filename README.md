@@ -35,7 +35,7 @@ scripts/build-app.sh                                     # -> dist/Parlo.app (1.
 ```
 `build-app.sh` fetches/verifies the models, builds the UI, runs `cargo tauri build` with `whisper-metal` (Metal STT) and
 `tts-accelerate` (Candle + Apple Accelerate TTS — faster than Candle-Metal here, see DECISIONS C-015), copies the models
-into `Contents/Resources/models/`, puts the pinned yt-dlp into `Contents/Helpers/yt-dlp/` (signed with its own entitlements), and signs with the hardened runtime + microphone entitlement. Options: `--dmg`,
+into `Contents/Resources/models/`, puts the pinned yt-dlp into `Contents/Resources/yt-dlp/` (signed with its own entitlements), and signs with the hardened runtime + microphone entitlement. Options: `--dmg`,
 `--no-metal`, `--skip-models`.
 
 ### Install

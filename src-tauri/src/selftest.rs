@@ -1050,11 +1050,17 @@ fn url_script(app: &AppHandle, say: &dyn Fn(&str)) -> R<()> {
     let secs = hound::WavReader::open(&wav)
         .map(|r| r.duration() as f64 / r.spec().sample_rate as f64)
         .map_err(|e| e.to_string())?;
+    // the url/ fixtures are made from synth/en_all.wav, whose length depends on the TTS that generated it
+    let want = hound::WavReader::open("fixtures/generated/synth/en_all.wav")
+        .map(|r| r.duration() as f64 / r.spec().sample_rate as f64)
+        .map_err(|e| e.to_string())?;
     ensure(
-        (secs - 14.0).abs() < 1.0,
-        format!("converted WAV is {secs:.1} s"),
+        (secs - want).abs() < 1.0,
+        format!("converted WAV is {secs:.1} s, source {want:.1} s"),
     )?;
-    say("export_download: original bytes identical, WAV conversion decodes (14 s)");
+    say(&format!(
+        "export_download: original bytes identical, WAV conversion decodes ({want:.0} s)"
+    ));
 
     // --- 3 · re-transcribe from the kept audio (no second download) --------------------------------------------------
     let (r, rx) = start_stt_job(

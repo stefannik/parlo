@@ -71,7 +71,7 @@ pub fn find_curl(dirs: &[PathBuf]) -> Option<PathBuf> {
 }
 
 /// The yt-dlp shipped inside the app / fetched for development. Layout `…/yt-dlp/yt-dlp` (+ `_internal/` for the onedir
-/// build). Order: `PARLO_YTDLP` env → `<exe>/../Helpers/yt-dlp/yt-dlp` (app bundle) → `tools/yt-dlp/yt-dlp` in the working
+/// build). Order: `PARLO_YTDLP` env → `<exe>/../Resources/yt-dlp/yt-dlp` (app bundle) → `tools/yt-dlp/yt-dlp` in the working
 /// directory or one of its ancestors (dev).
 pub fn bundled_ytdlp() -> Option<PathBuf> {
     if let Some(p) = std::env::var_os("PARLO_YTDLP") {
@@ -80,7 +80,7 @@ pub fn bundled_ytdlp() -> Option<PathBuf> {
     }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(contents) = exe.parent().and_then(|d| d.parent()) {
-            let p = contents.join("Helpers/yt-dlp/yt-dlp");
+            let p = contents.join("Resources/yt-dlp/yt-dlp");
             if is_executable(&p) {
                 return Some(p);
             }

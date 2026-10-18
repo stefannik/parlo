@@ -57,10 +57,54 @@ def unpack_zip(zpath: Path, inner: str, out: Path) -> None:
                 target.mkdir(parents=True, exist_ok=True)
                 continue
             target.parent.mkdir(parents=True, exist_ok=True)
+            if stat.S_ISLNK(info.external_attr >> 16):
+                # zipfile would write the link as a plain file holding its target. The macOS build's
+                # Python.framework (Versions/Current, Python → Versions/Current/Python) must keep its links,
+                # or codesign rejects the framework as ambiguous.
+                link = z.read(info).decode()
+                resolved = (target.parent / link).resolve()
+                if Path(link).is_absolute() or not resolved.is_relative_to(out.resolve()):
+                    raise SystemExit(f"refusing zip symlink {name!r} -> {link!r}")
+                target.symlink_to(link)
+                continue
             with z.open(info) as src, target.open("wb") as dst:
                 shutil.copyfileobj(src, dst)
             mode = (info.external_attr >> 16) & 0o777
             target.chmod(mode or 0o644)
+
+
+def relink_frameworks(root: Path) -> None:
+    """The official macOS zip stores each *.framework with plain copies where a framework has symlinks
+    (Versions/Current, and the top-level binary + Resources). codesign rejects that layout ("bundle format is
+    ambiguous"), so rebuild the standard links when the copies are identical. Byte-for-byte the same code runs."""
+    for fw in root.rglob("*.framework"):
+        versions = fw / "Versions"
+        current = versions / "Current"
+        if not current.is_dir() or current.is_symlink():
+            continue
+        real = [v for v in versions.iterdir() if v.name != "Current" and v.is_dir() and not v.is_symlink()]
+        if len(real) != 1:
+            continue
+        ver = real[0]
+
+        def same(a: Path, b: Path) -> bool:
+            if a.is_dir() and b.is_dir():
+                fa = sorted(p.relative_to(a) for p in a.rglob("*") if p.is_file())
+                fb = sorted(p.relative_to(b) for p in b.rglob("*") if p.is_file())
+                return fa == fb and all(sha256_file(a / p) == sha256_file(b / p) for p in fa)
+            return a.is_file() and b.is_file() and sha256_file(a) == sha256_file(b)
+
+        if not same(current, ver):
+            continue
+        top = [p for p in fw.iterdir() if p.name != "Versions"]
+        if not all(same(p, ver / p.name) for p in top):
+            continue
+        shutil.rmtree(current)
+        current.symlink_to(ver.name)
+        for p in top:
+            shutil.rmtree(p) if p.is_dir() else p.unlink()
+            p.symlink_to(f"Versions/Current/{p.name}")
+        print(f"relink  {fw.relative_to(root)} (Versions/Current -> {ver.name})")
 
 
 def main():
@@ -104,6 +148,7 @@ def main():
         out.mkdir(parents=True)
         if f["variant"] == "onedir":
             unpack_zip(dl, f["inner"], out)
+            relink_frameworks(out)
         else:
             shutil.copyfile(dl, exe)
         exe.chmod(exe.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)

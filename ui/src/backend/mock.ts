@@ -606,7 +606,7 @@ export class MockBackend implements Backend {
     if (!this.settings.allow_downloads) throw new BackendError({ code: 'download_disabled', message: DOWNLOADS_OFF, detail: null })
     return {
       tools: [
-        { kind: 'bundled', path: '/Applications/Parlo.app/Contents/Helpers/yt-dlp/yt-dlp', version: '2026.08.19', impersonate: true, error: null },
+        { kind: 'bundled', path: '/Applications/Parlo.app/Contents/Resources/yt-dlp/yt-dlp', version: '2026.08.19', impersonate: true, error: null },
         ...(this.settings.downloader_path === '/nonexistent'
           ? []
           : [{ kind: 'system', path: this.settings.downloader_path || '/opt/homebrew/bin/yt-dlp', version: '2026.10.02', impersonate: false, error: null }]),

@@ -106,7 +106,7 @@ fn success_downloads_decodes_and_reports_progress() {
     // the pipeline's decoder reads what was downloaded; nothing but the audio + meta.json is left
     let wav = env.dir.path().join("o.wav");
     let p = prepare_audio(&d.path, &wav, &AtomicBool::new(false), |_| {}).unwrap();
-    assert!((p.duration_s - 14.0).abs() < 0.5);
+    assert!((p.duration_s - common::url_source_secs()).abs() < 0.5);
     let mut left: Vec<_> = std::fs::read_dir(env.job())
         .unwrap()
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())

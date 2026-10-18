@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <!-- ONLY for the bundled yt-dlp helper (Contents/Helpers/yt-dlp). No network entitlement: the app isn't sandboxed, and the
+  <!-- ONLY for the bundled yt-dlp helper (Contents/Resources/yt-dlp). No network entitlement: the app isn't sandboxed, and the
        helper is a child process the user starts a download with (DECISIONS C-021). -->
   <!-- PyInstaller's launcher dlopen()s the bundled Python and libraries; with library validation on, that only works for
        libraries signed by the same Team ID — not for an ad-hoc signature. -->

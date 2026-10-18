@@ -15,6 +15,13 @@ pub fn fixture(rel: &str) -> PathBuf {
 }
 
 /// Absolute path to `models/<rel>` at the repo root; fails loudly if missing (fetch with scripts/fetch-models.sh).
+/// Length of `synth/en_all.wav`, the source of the `url/` fixtures. It depends on the TTS that generated it (espeak-ng on
+/// Linux, `say` on macOS), so tests compare against it instead of a fixed number.
+pub fn url_source_secs() -> f64 {
+    let r = hound::WavReader::open(fixture("generated/synth/en_all.wav")).expect("readable WAV");
+    r.duration() as f64 / r.spec().sample_rate as f64
+}
+
 pub fn model(rel: &str) -> PathBuf {
     let p = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../models")

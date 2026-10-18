@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build dist/Parlo.app (macOS, arm64). DRAFTED IN THE CLOUD — never run on a Mac yet (docs/MAC_HANDOFF.md section D1).
 #   scripts/build-app.sh [--dmg] [--no-metal] [--skip-models]
-# Steps: fetch/verify models + yt-dlp → build UI → `tauri build` → place models + the bundled yt-dlp (Contents/Helpers) →
+# Steps: fetch/verify models + yt-dlp → build UI → `tauri build` → place models + the bundled yt-dlp (Contents/Resources) →
 # sign (PARLO_SIGN_IDENTITY, else ad-hoc; the helper gets its own entitlements) → dist/Parlo.app
 # PARLO_YTDLP_VARIANT=onedir|onefile picks the yt-dlp build (default onedir; DECISIONS C-022).
 # Prerequisites: Xcode Command Line Tools, Rust (aarch64-apple-darwin), Node ≥ 22, `brew install cmake`, `cargo install tauri-cli --locked --version '^2'`.
@@ -51,25 +51,30 @@ cp "models/whisper/$WHISPER_MODEL" "$RES/models/whisper/"
 cp "models/vad/ggml-silero-v5.1.2.bin" "$RES/models/vad/"
 cp -R "models/pockettts" "$RES/models/pockettts"
 [[ -d resources/voice-previews ]] && cp -R resources/voice-previews "$RES/resources/voice-previews"
-# the bundled downloader: Contents/Helpers/yt-dlp/yt-dlp (+ _internal/ for onedir) — found by parlo_core::download::discover
-mkdir -p dist/Parlo.app/Contents/Helpers
-cp -R tools/yt-dlp dist/Parlo.app/Contents/Helpers/yt-dlp
-rm -f dist/Parlo.app/Contents/Helpers/yt-dlp/.pinned
+# the bundled downloader: Contents/Resources/yt-dlp/yt-dlp (+ _internal/ for onedir) — found by parlo_core::download::discover
+mkdir -p dist/Parlo.app/Contents/Resources
+cp -R tools/yt-dlp dist/Parlo.app/Contents/Resources/yt-dlp
+rm -f dist/Parlo.app/Contents/Resources/yt-dlp/.pinned
 
 # 5 · sign: hardened runtime + audio-input entitlement. An ad-hoc signature changes on every build, so macOS (TCC)
 # forgets the microphone permission after each rebuild — create a self-signed "Parlo Local Signing" certificate once
 # (Keychain Access → Certificate Assistant → Create a Certificate… → Code Signing) and export PARLO_SIGN_IDENTITY="Parlo Local Signing".
 IDENTITY="${PARLO_SIGN_IDENTITY:--}"
-# 5a · the bundled yt-dlp first (inside-out): every Mach-O under Helpers/yt-dlp (the launcher, Python, the .so/.dylib files
+# 5a · the bundled yt-dlp first (inside-out): every Mach-O under Resources/yt-dlp (the launcher, Python, the .so/.dylib files
 # of _internal/) gets the hardened runtime and src-tauri/entitlements-ytdlp.plist (PyInstaller needs library validation off
 # and executable memory; scoped to this helper only — the app itself keeps its own, smaller set). `--deep` is NOT used for
 # the app below, because it would re-sign the helper with the app's entitlements.
-HELPER=dist/Parlo.app/Contents/Helpers/yt-dlp
+HELPER=dist/Parlo.app/Contents/Resources/yt-dlp
+# Frameworks (the embedded Python.framework) are signed as bundles: codesign refuses a binary inside one ("bundle
+# format is ambiguous"). Their symlinks must survive unpacking (scripts/fetch_tools.py) for that to work.
 while IFS= read -r f; do
   if file -b "$f" | grep -q 'Mach-O'; then
     codesign --force --options runtime --entitlements src-tauri/entitlements-ytdlp.plist --sign "$IDENTITY" "$f"
   fi
-done < <(find "$HELPER" -type f | awk '{ print length, $0 }' | sort -rn | cut -d' ' -f2-)
+done < <(find "$HELPER" -type f -not -path '*.framework/*' | awk '{ print length, $0 }' | sort -rn | cut -d' ' -f2-)
+while IFS= read -r fw; do
+  codesign --force --options runtime --sign "$IDENTITY" "$fw"
+done < <(find "$HELPER" -type d -name '*.framework' -prune)
 # 5b · the app
 codesign --force --options runtime --entitlements src-tauri/entitlements.plist --sign "$IDENTITY" dist/Parlo.app
 codesign --verify --deep --strict --verbose=2 dist/Parlo.app

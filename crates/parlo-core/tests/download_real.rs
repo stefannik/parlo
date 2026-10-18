@@ -73,7 +73,7 @@ fn assert_decodes(d: &Downloaded) {
     let p = prepare_audio(&d.path, &wav, &AtomicBool::new(false), |_| {})
         .unwrap_or_else(|e| panic!("{}: {e}", d.path.display()));
     assert!(
-        (p.duration_s - 14.07).abs() < 0.1,
+        (p.duration_s - common::url_source_secs()).abs() < 0.1,
         "{} decoded to {} s",
         d.path.display(),
         p.duration_s
