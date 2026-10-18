@@ -371,9 +371,68 @@ fn workspace_survives_restart() {
             edited: true,
             exported_or_copied: false,
             recording_id: None,
+            source_url: Some("https://example.com/ep.mp3".into()),
+            download_id: Some("dl-0123456789abcdef".into()),
         }),
         tts: None,
+        pending_url: Some("https://example.com/next".into()),
     };
     ws.save(&paths).unwrap();
     assert_eq!(Workspace::load(&paths), ws);
+}
+
+#[test]
+fn old_workspace_and_settings_files_still_load() {
+    // files written before "Transcribe from URL" have none of the new fields
+    let dir = tempfile::tempdir().unwrap();
+    let paths = AppPaths::under(dir.path());
+    std::fs::create_dir_all(&paths.data).unwrap();
+    std::fs::write(
+        paths.workspace_file(),
+        br#"{"transcript":{"text":"x","source_name":"a.mp3","language":null,"duration_s":1.0,"words":1,"edited":false,"exported_or_copied":false,"recording_id":null},"tts":null}"#,
+    )
+    .unwrap();
+    let ws = Workspace::load(&paths);
+    assert_eq!(ws.transcript.as_ref().unwrap().text, "x");
+    assert!(ws.transcript.unwrap().download_id.is_none() && ws.pending_url.is_none());
+    std::fs::write(
+        paths.settings_file(),
+        br#"{"version":1,"default_voice":"alba"}"#,
+    )
+    .unwrap();
+    let s = Settings::load(&paths);
+    assert_eq!(s.default_voice, "alba");
+    assert!(
+        s.allow_downloads && s.impersonate && s.rate_limit_sleep,
+        "downloads default ON"
+    );
+    assert!(!s.use_browser_cookies && s.cookies_browser.is_none() && s.downloader_path.is_none());
+}
+
+#[test]
+fn download_settings_patch_and_options() {
+    let s = Settings::default();
+    let o = s.download_options();
+    assert!(o.impersonate && o.rate_limit_sleep && o.cookies_browser.is_none());
+    // cookies need both the switch and a browser
+    let s2 = s
+        .apply_patch(&serde_json::json!({"cookies_browser":"firefox"}))
+        .unwrap();
+    assert_eq!(s2.download_options().cookies_browser, None);
+    let s3 = s2
+        .apply_patch(&serde_json::json!({"use_browser_cookies":true,"impersonate":false,"rate_limit_sleep":false,"downloader_path":"/opt/homebrew/bin/yt-dlp"}))
+        .unwrap();
+    let o = s3.download_options();
+    assert_eq!(o.cookies_browser.as_deref(), Some("firefox"));
+    assert!(!o.impersonate && !o.rate_limit_sleep);
+    assert_eq!(
+        s3.downloader_path.as_deref(),
+        Some("/opt/homebrew/bin/yt-dlp")
+    );
+    assert!(s
+        .apply_patch(&serde_json::json!({"cookies_browser":"netscape; rm -rf"}))
+        .is_err());
+    assert!(s
+        .apply_patch(&serde_json::json!({"allow_downloads":false}))
+        .is_ok_and(|n| !n.allow_downloads));
 }

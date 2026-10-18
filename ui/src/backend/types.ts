@@ -3,6 +3,7 @@
 import type {
   AppInfo,
   AudioExportFormat,
+  DownloadsInfoDto,
   ImportResultDto,
   InputDeviceDto,
   IpcError,
@@ -79,6 +80,11 @@ export interface Backend {
   exportTts(outputId: string, format: AudioExportFormat, dest: string): Promise<string>
   exportTranscript(text: string, format: TranscriptExportFormat, dest: string, meta: TranscriptMeta): Promise<string>
   exportRecording(recordingId: string, format: AudioExportFormat, dest: string): Promise<string>
+  /** Save audio fetched by "Transcribe from URL": as downloaded (`null`) or converted. */
+  exportDownload(downloadId: string, format: AudioExportFormat | null, dest: string): Promise<string>
+
+  /** Settings → Downloads: downloaders found (versions, impersonation), deno, installed browsers. Rejects with `download_disabled` when the switch is off. */
+  downloadsInfo(): Promise<DownloadsInfoDto>
 
   workspaceGet(): Promise<WorkspaceDto>
   workspaceUpdate(patch: WorkspacePatch): Promise<void>

@@ -42,6 +42,13 @@ export const commands = {
 	diagnosticsText: () => __TAURI_INVOKE<string>("diagnostics_text"),
 	/**  Final answer to the quit confirmation (stop and save the recording, then exit). */
 	quitConfirmed: () => typedError<null, IpcError>(__TAURI_INVOKE("quit_confirmed")),
+	/**
+	 *  Settings → Downloads: which downloader(s) would run, their versions, and the browsers whose cookies could be read.
+	 *  Runs `yt-dlp --version` / `--list-impersonate-targets` (no network), so it's async.
+	 */
+	downloadsInfo: () => typedError<DownloadsInfoDto, IpcError>(__TAURI_INVOKE("downloads_info")),
+	/**  Save the downloaded audio: as downloaded (`format` null) or converted to WAV / M4A / MP3. */
+	exportDownload: (downloadId: string, format: "wav" | "m4a" | "mp3" | null, dest: string) => typedError<string, IpcError>(__TAURI_INVOKE("export_download", { downloadId, format, dest })),
 };
 
 /** Events */
@@ -69,6 +76,31 @@ export type AppInfo = {
 export type Appearance = "system" | "light" | "dark";
 
 export type AudioExportFormat = "wav" | "m4a" | "mp3";
+
+export type BrowserDto = {
+	/**  yt-dlp's name (`chrome`, `firefox`, `safari`, …) */
+	id: string,
+	label: string,
+};
+
+export type DownloaderToolDto = {
+	/**  `bundled` | `system` */
+	kind: string,
+	path: string,
+	version: string | null,
+	/**  can this build impersonate Chrome (`--impersonate chrome`)? `None` = unknown */
+	impersonate: boolean | null,
+	error: string | null,
+};
+
+/**  What Settings → Downloads shows: the downloader(s) in use and the browsers whose cookies could be read. */
+export type DownloadsInfoDto = {
+	tools: DownloaderToolDto[],
+	curl: string | null,
+	/**  a system deno (JavaScript runtime for YouTube), if found */
+	deno: string | null,
+	browsers: BrowserDto[],
+};
 
 export type GapDto = {
 	at_ms: number,
@@ -191,6 +223,15 @@ export type SettingsDto = {
 	default_voice: string,
 	default_speed: number,
 	tts_quality: string,
+	/**  "Allow downloads from URLs" (default on). Off hides the URL card and makes the download commands refuse. */
+	allow_downloads: boolean,
+	/**  override for the system yt-dlp (file or directory) */
+	downloader_path: string | null,
+	use_browser_cookies: boolean,
+	/**  yt-dlp browser name (`chrome`, `firefox`, `safari`, …) */
+	cookies_browser: string | null,
+	impersonate: boolean,
+	rate_limit_sleep: boolean,
 };
 
 /**  Partial update: fields that are `null` are left unchanged. */
@@ -205,6 +246,14 @@ export type SettingsPatch = {
 	default_voice?: string | null,
 	default_speed?: number | null,
 	tts_quality?: string | null,
+	allow_downloads?: boolean | null,
+	/**  `""` = search the usual folders; any other value is the path of a yt-dlp (or a folder containing it) */
+	downloader_path?: string | null,
+	use_browser_cookies?: boolean | null,
+	/**  `""` = none */
+	cookies_browser?: string | null,
+	impersonate?: boolean | null,
+	rate_limit_sleep?: boolean | null,
 };
 
 export type StorageEntryDto = {
@@ -216,10 +265,24 @@ export type StorageEntryDto = {
 };
 
 export type SttEventDto = 
-/**  `preparing` | `detecting_speech` | `detecting_language` | `loading_model` | `transcribing` */
-{ type: "stage"; stage: string } | { type: "stage_progress"; fraction: number } | { type: "language"; code: string; prob: number } | { type: "progress"; done_s: number; total_s: number; eta_ms: number | null } | { type: "paragraph"; index: number; text: string; start_s: number; end_s: number } | { type: "done"; transcript: TranscriptDto } | { type: "error"; error: IpcError };
+/**  `downloading` (URL jobs only) | `preparing` | `detecting_speech` | `detecting_language` | `loading_model` | `transcribing` */
+{ type: "stage"; stage: string } | 
+/**  title (and length) of the link, known before the first byte arrives */
+{ type: "download_info"; title: string; duration_s: number | null; 
+/**  the link was a playlist: only its first item is transcribed */
+playlist: boolean } | 
+/**  yt-dlp's rate-limit sleep before the download starts ("Waiting N s") */
+{ type: "download_waiting"; secs: number } | { type: "download_progress"; downloaded_bytes: number; total_bytes: number | null; speed_bps: number | null; eta_s: number | null } | 
+/**  the first downloader failed and another one took over ("Bundled downloader failed, retried with system yt-dlp") */
+{ type: "downloader_fallback"; 
+/**  `bundled` | `system` | `curl` */
+from: string; to: string; message: string } | 
+/**  the audio is complete and on disk; transcription starts */
+{ type: "downloaded"; download_id: string; media_path: string; title: string; bytes: number } | { type: "stage_progress"; fraction: number } | { type: "language"; code: string; prob: number } | { type: "progress"; done_s: number; total_s: number; eta_ms: number | null } | { type: "paragraph"; index: number; text: string; start_s: number; end_s: number } | { type: "done"; transcript: TranscriptDto } | { type: "error"; error: IpcError };
 
-export type SttSource = { kind: "path"; path: string } | { kind: "recording"; recording_id: string };
+export type SttSource = { kind: "path"; path: string } | { kind: "recording"; recording_id: string } | 
+/**  download the audio of this link first (http/https), then transcribe it */
+{ kind: "url"; url: string };
 
 export type TranscribeRequest = {
 	source: SttSource,
@@ -237,6 +300,12 @@ export type TranscriptDto = {
 	processing_s: number,
 	source_name: string,
 	recording_id: string | null,
+	/**  the link this was downloaded from (URL jobs) */
+	source_url: string | null,
+	/**  directory id of the kept download (`dl-…`); the audio stays until this transcript is replaced or cleared */
+	download_id: string | null,
+	/**  the downloaded audio file (player, re-transcribe, export) */
+	media_path: string | null,
 };
 
 export type TranscriptExportFormat = "txt" | "md";
@@ -270,6 +339,8 @@ export type VoiceDto = {
 export type WorkspaceDto = {
 	transcript: WorkspaceTranscriptDto | null,
 	tts: WorkspaceTtsDto | null,
+	/**  an unfinished download from a previous run: refill the URL field with it */
+	pending_url: string | null,
 };
 
 export type WorkspacePatch = {
@@ -288,6 +359,10 @@ export type WorkspaceTranscriptDto = {
 	edited: boolean,
 	exported_or_copied: boolean,
 	recording_id: string | null,
+	source_url: string | null,
+	download_id: string | null,
+	/**  filled in by the core when the kept download still exists (ignored on update) */
+	media_path: string | null,
 };
 
 export type WorkspaceTtsDto = {

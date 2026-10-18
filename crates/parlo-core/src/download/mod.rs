@@ -627,7 +627,7 @@ mod tests {
         std::fs::create_dir_all(bundled.parent().unwrap()).unwrap();
         std::fs::write(&bundled, "#!/bin/sh\n").unwrap();
         std::fs::set_permissions(&bundled, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let tools = Tools::discover_in(None, &[bin.clone()], Some(bundled.clone()));
+        let tools = Tools::discover_in(None, std::slice::from_ref(&bin), Some(bundled.clone()));
         assert_eq!(tools.bundled.as_ref(), Some(&bundled));
         assert_eq!(tools.system, Some(bin.join("yt-dlp")));
         assert_eq!(tools.deno, Some(bin.join("deno")));

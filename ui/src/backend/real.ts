@@ -78,6 +78,8 @@ export class RealBackend implements Backend {
   exportTranscript = async (text: string, format: Parameters<Backend['exportTranscript']>[1], dest: string, meta: Parameters<Backend['exportTranscript']>[3]) =>
     unwrap(await commands.exportTranscript(text, format, dest, meta))
   exportRecording = async (id: string, format: Parameters<Backend['exportRecording']>[1], dest: string) => unwrap(await commands.exportRecording(id, format, dest))
+  exportDownload = async (id: string, format: Parameters<Backend['exportDownload']>[1], dest: string) => unwrap(await commands.exportDownload(id, format, dest))
+  downloadsInfo = async () => unwrap(await commands.downloadsInfo())
 
   workspaceGet = () => commands.workspaceGet()
   workspaceUpdate = async (patch: Parameters<Backend['workspaceUpdate']>[0]) => void unwrap(await commands.workspaceUpdate(patch))

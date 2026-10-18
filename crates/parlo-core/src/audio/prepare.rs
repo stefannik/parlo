@@ -67,6 +67,42 @@ pub fn prepare_audio_with(
     }
 }
 
+/// Decode `src` to a mono PCM16 WAV at the source's own sample rate (export of downloaded audio to WAV/MP3/M4A).
+/// Returns the number of frames written. Streams block-wise; the file only appears under `dest` when complete.
+pub fn decode_to_native_wav(src: &Path, dest: &Path, cancel: &AtomicBool) -> Result<u64> {
+    let tmp = dest.with_extension("part");
+    let mut writer: Option<WavWriter> = None;
+    let mut rate = 0u32;
+    let mut pcm: Vec<i16> = Vec::new();
+    let res = decode_mono(
+        src,
+        cancel,
+        |_| {},
+        |block, r| {
+            if writer.is_none() {
+                writer = Some(WavWriter::create(&tmp, 1, r)?);
+                rate = r;
+            } else if r != rate {
+                return Err(Error::Encode("the audio changes sample rate midway".into()));
+            }
+            pcm.clear();
+            pcm.extend(block.iter().map(|x| f32_to_i16(*x)));
+            writer.as_mut().expect("created above").write_i16(&pcm)
+        },
+    );
+    if let Err(e) = res {
+        drop(writer);
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    let Some(w) = writer else {
+        return Err(crate::error::DecodeError::ZeroDuration.into());
+    };
+    let frames = w.finalize()?;
+    std::fs::rename(&tmp, dest).map_err(|e| Error::io(dest, e))?;
+    Ok(frames)
+}
+
 /// Decode `src` into `dest` (16 kHz mono PCM16 WAV). `progress` gets 0..=1 (if the container knows its length).
 pub fn prepare_audio(
     src: &Path,

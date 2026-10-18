@@ -219,7 +219,7 @@ describe('app shell (mock backend)', () => {
 
   it('restores the last transcript from the workspace on launch', async () => {
     const { w } = await boot({
-      workspace: { transcript: { text: 'Welcome back.', source_name: 'yesterday.m4a', language: 'en', duration_s: 61, words: 2, edited: false, exported_or_copied: true, recording_id: null }, tts: null },
+      workspace: { transcript: { text: 'Welcome back.', source_name: 'yesterday.m4a', language: 'en', duration_s: 61, words: 2, edited: false, exported_or_copied: true, recording_id: null, source_url: null, download_id: null, media_path: null }, tts: null, pending_url: null },
     })
     expect(tid(w, 'transcribe-view').attributes('data-phase')).toBe('result')
     expect((tid(w, 'transcript-editor').element as HTMLTextAreaElement).value).toBe('Welcome back.')
@@ -231,5 +231,165 @@ describe('app shell (mock backend)', () => {
     backend.simulateQuit()
     await flushPromises()
     expect(tid(w, 'quit-dialog').text()).toContain('Stop recording and quit?')
+  })
+
+  // ------------------------------------------------------------------------------------------ Transcribe from URL
+  describe('Transcribe from a link', () => {
+    const paste = (text: string, target: EventTarget = document.body) => {
+      const ev = new Event('paste', { bubbles: true, cancelable: true }) as Event & { clipboardData?: unknown }
+      ev.clipboardData = { getData: (t: string) => (t === 'text/plain' ? text : '') }
+      target.dispatchEvent(ev)
+      return ev
+    }
+    const drop = (data: Record<string, string>) => {
+      const ev = new Event('drop', { bubbles: true, cancelable: true }) as Event & { dataTransfer?: unknown }
+      ev.dataTransfer = { types: Object.keys(data), getData: (t: string) => data[t] ?? '' }
+      document.body.dispatchEvent(ev)
+      return ev
+    }
+
+    it('the empty screen has a third card with a link field and a Transcribe button', async () => {
+      const { w } = await boot()
+      expect(tid(w, 'url-card').text()).toContain('Transcribe a link')
+      expect(tid(w, 'url-input').attributes('placeholder')).toBe('https://…')
+      expect(tid(w, 'record-button').exists() && tid(w, 'drop-zone').exists()).toBe(true)
+    })
+
+    it('typing a link and pressing Transcribe shows the Downloading stage (title, waiting, bytes) and then the result', async () => {
+      const { w, backend } = await boot({ timeScale: 0.03 })
+      backend.control.hold('stt:waiting')
+      await tid(w, 'url-input').setValue('https://www.youtube.com/watch?v=abc')
+      await tid(w, 'url-submit').trigger('click')
+      await vi.waitFor(() => expect(tid(w, 'transcribe-view').attributes('data-phase')).toBe('processing'))
+      await vi.waitFor(() => expect(tid(w, 'source-name').text()).toBe('Local-first software: an interview with the authors'))
+      expect(w.find('[data-stage="downloading"]').classes()).toContain('current')
+      await vi.waitFor(() => expect(tid(w, 'eta').text()).toMatch(/^Waiting \d+ s…$/))
+      expect(tid(w, 'download-waiting').exists()).toBe(true)
+      expect(tid(w, 'proc-subtitle').text()).toContain('1 h 02 min') // the video's length, known before any bytes
+      backend.control.release()
+      await vi.waitFor(() => expect(tid(w, 'eta').text()).toMatch(/%.*MB of 36\.6 MB.*MB\/s.*left/), { timeout: 4000 })
+      await vi.waitFor(() => expect(tid(w, 'transcribe-view').attributes('data-phase')).toBe('result'), { timeout: 8000 })
+      expect(tid(w, 'source-host').text()).toBe('youtube.com')
+      expect(tid(w, 'save-audio-button').exists()).toBe(true)
+    })
+
+    it('Enter in the field starts it; a bad link shows an inline message and starts nothing', async () => {
+      const { w, backend } = await boot({ timeScale: 0.02 })
+      const spy = vi.spyOn(backend, 'transcribe')
+      await tid(w, 'url-input').setValue('hello world')
+      await tid(w, 'url-submit').trigger('click')
+      expect(tid(w, 'url-error').text()).toContain('single web link')
+      expect(spy).not.toHaveBeenCalled()
+      await tid(w, 'url-input').setValue('ftp://example.com/a.mp3')
+      await tid(w, 'url-input').trigger('keydown', { key: 'Enter' })
+      await tid(w, 'url-input').trigger('submit')
+      await tid(w, 'url-submit').trigger('click')
+      expect(tid(w, 'url-error').text()).toContain('Only http')
+      await tid(w, 'url-input').setValue('https://example.com/ep.mp3')
+      expect(tid(w, 'url-error').exists()).toBe(false)
+      await tid(w, 'url-input').trigger('submit')
+      await vi.waitFor(() => expect(spy).toHaveBeenCalledOnce())
+      await vi.waitFor(() => expect(tid(w, 'transcribe-view').attributes('data-phase')).toBe('result'), { timeout: 8000 })
+    })
+
+    it('⌘V of a link on the empty screen starts it; pasting into a text field or non-links does not', async () => {
+      const { w, backend } = await boot({ timeScale: 0.02 })
+      const spy = vi.spyOn(backend, 'transcribe')
+      paste('just some words')
+      paste('https://example.com/ep.mp3', tid(w, 'url-input').element)
+      await flushPromises()
+      expect(spy).not.toHaveBeenCalled()
+      const ev = paste('  https://example.com/ep.mp3\n')
+      expect(ev.defaultPrevented).toBe(true)
+      await vi.waitFor(() => expect(spy).toHaveBeenCalledOnce())
+      expect(spy.mock.calls[0]![0].source).toEqual({ kind: 'url', url: 'https://example.com/ep.mp3' })
+      await vi.waitFor(() => expect(tid(w, 'transcribe-view').attributes('data-phase')).toBe('result'), { timeout: 8000 })
+      // a result is on screen now: another paste is ignored
+      paste('https://example.com/other.mp3')
+      await flushPromises()
+      expect(spy).toHaveBeenCalledOnce()
+    })
+
+    it('a link dragged from a browser starts it (uri-list or plain text); dragged files are left to the file drop', async () => {
+      const { w, backend } = await boot({ timeScale: 0.02 })
+      const spy = vi.spyOn(backend, 'transcribe')
+      drop({ Files: '' })
+      drop({ 'text/plain': 'not a link' })
+      await flushPromises()
+      expect(spy).not.toHaveBeenCalled()
+      const ev = drop({ 'text/uri-list': '# from Safari\r\nhttps://example.com/ep.m4a\r\n', 'text/plain': 'https://example.com/ep.m4a' })
+      expect(ev.defaultPrevented).toBe(true)
+      await vi.waitFor(() => expect(spy).toHaveBeenCalledOnce())
+      await vi.waitFor(() => expect(tid(w, 'transcribe-view').attributes('data-phase')).toBe('result'), { timeout: 8000 })
+    })
+
+    it('Cancel while downloading returns to the empty screen with the link still in the field', async () => {
+      const { w } = await boot({ timeScale: 0.05 })
+      await tid(w, 'url-input').setValue('https://example.com/ep.mp3')
+      await tid(w, 'url-submit').trigger('click')
+      await vi.waitFor(() => expect(w.find('[data-stage="downloading"]').classes()).toContain('current'))
+      await tid(w, 'cancel-button').trigger('click')
+      await vi.waitFor(() => expect(tid(w, 'transcribe-view').attributes('data-phase')).toBe('empty'), { timeout: 4000 })
+      expect((tid(w, 'url-input').element as HTMLInputElement).value).toBe('https://example.com/ep.mp3')
+      expect(w.find('[data-testid="error-card"]').exists()).toBe(false)
+    })
+
+    it('a private video shows the cookies hint and a button that opens Settings → Downloads', async () => {
+      const { w } = await boot({ timeScale: 0.02 })
+      await tid(w, 'url-input').setValue('https://www.youtube.com/private')
+      await tid(w, 'url-submit').trigger('click')
+      await vi.waitFor(() => expect(tid(w, 'error-card').exists()).toBe(true), { timeout: 4000 })
+      expect(tid(w, 'error-card').text()).toContain('Use browser cookies')
+      expect(tid(w, 'error-link').text()).toContain('https://www.youtube.com/private')
+      await tid(w, 'open-download-settings').trigger('click')
+      await flushPromises()
+      expect(tid(w, 'downloads-section').exists()).toBe(true)
+      await tid(w, 'settings-close').trigger('click')
+      await tid(w, 'retry-button').trigger('click') // Retry downloads the same link again
+      await vi.waitFor(() => expect(tid(w, 'error-card').exists()).toBe(true), { timeout: 4000 })
+    })
+
+    it('an interrupted download refills the link field on launch', async () => {
+      const { w } = await boot({ workspace: { transcript: null, tts: null, pending_url: 'https://example.com/half-done.mp3' } })
+      expect((tid(w, 'url-input').element as HTMLInputElement).value).toBe('https://example.com/half-done.mp3')
+    })
+
+    it('Settings → Downloads: downloader, browsers, toggles; switching downloads off hides the card and refuses links', async () => {
+      const { w, backend } = await boot({ timeScale: 0.02 })
+      const app = useAppStore()
+      app.settingsOpen = true
+      await flushPromises()
+      await tid(w, 'settings-downloads').trigger('click')
+      await vi.waitFor(() => expect(tid(w, 'downloader-list').exists()).toBe(true))
+      expect(tid(w, 'tool-bundled').text()).toContain('2026.08.19')
+      expect(tid(w, 'tool-bundled').text()).toContain('in use')
+      expect(tid(w, 'tool-system').text()).toContain('fallback')
+      expect(tid(w, 'tool-system').text()).toContain('No Chrome impersonation')
+      expect(tid(w, 'deno-status').text()).toContain('/opt/homebrew/bin/deno')
+      // cookies: off by default, the picker lists only installed browsers
+      expect((tid(w, 'use-cookies').element as HTMLInputElement).checked).toBe(false)
+      expect(tid(w, 'cookies-browser').exists()).toBe(false)
+      await tid(w, 'use-cookies').setValue(true)
+      await vi.waitFor(() => expect(tid(w, 'cookies-browser').exists()).toBe(true))
+      expect(tid(w, 'cookies-browser').findAll('option').map((o) => o.text())).toEqual(['Google Chrome', 'Firefox', 'Safari'])
+      expect(app.settings).toMatchObject({ use_browser_cookies: true, cookies_browser: 'chrome' })
+      await tid(w, 'cookies-browser').setValue('firefox')
+      expect(app.settings?.cookies_browser).toBe('firefox')
+      await tid(w, 'impersonate').setValue(false)
+      await tid(w, 'rate-limit').setValue(false)
+      expect(app.settings).toMatchObject({ impersonate: false, rate_limit_sleep: false })
+      // master switch
+      await tid(w, 'allow-downloads').setValue(false)
+      await flushPromises()
+      expect(app.settings?.allow_downloads).toBe(false)
+      expect(tid(w, 'use-cookies').exists()).toBe(false)
+      await tid(w, 'settings-close').trigger('click')
+      expect(tid(w, 'url-card').exists()).toBe(false)
+      expect(tid(w, 'record-button').exists() && tid(w, 'drop-zone').exists()).toBe(true)
+      const spy = vi.spyOn(backend, 'transcribe')
+      paste('https://example.com/ep.mp3')
+      await flushPromises()
+      expect(spy).not.toHaveBeenCalled()
+    })
   })
 })

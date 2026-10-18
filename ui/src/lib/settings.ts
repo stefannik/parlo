@@ -12,6 +12,12 @@ export function settingsPatch(p: Partial<SettingsPatch>): SettingsPatch {
     default_voice: null,
     default_speed: null,
     tts_quality: null,
+    allow_downloads: null,
+    downloader_path: null,
+    use_browser_cookies: null,
+    cookies_browser: null,
+    impersonate: null,
+    rate_limit_sleep: null,
     ...p,
   }
 }

@@ -194,9 +194,179 @@ describe('transcribe store state machine', () => {
   it('restores a persisted transcript as a result', async () => {
     setup()
     const tr = useTranscribeStore()
-    tr.restore({ text: 'restored text here', source_name: 'old.m4a', language: 'fr', duration_s: 10, words: 3, edited: true, exported_or_copied: false, recording_id: null })
+    tr.restore({ text: 'restored text here', source_name: 'old.m4a', language: 'fr', duration_s: 10, words: 3, edited: true, exported_or_copied: false, recording_id: null, source_url: null, download_id: null, media_path: null })
     expect(tr.phase).toBe('result')
     expect(tr.edited).toBe(true)
     expect(tr.words).toBe(3)
   })
 })
+
+describe('transcribe from URL (store)', () => {
+  const LINK = 'https://www.youtube.com/watch?v=abc'
+
+  it('empty → Downloading (title, bytes, speed) → the unchanged pipeline → result that remembers its link and audio', async () => {
+    setup({ timeScale: 0.02 })
+    const tr = useTranscribeStore()
+    tr.urlDraft = `  ${LINK}  `
+    expect(await tr.transcribeUrl()).toBe(true)
+    await flush()
+    expect(tr.phase).toBe('processing')
+    expect(tr.isUrlJob).toBe(true)
+    await vi.waitFor(() => expect(tr.currentStage).toBe('downloading'))
+    await vi.waitFor(() => expect(tr.download?.downloaded).toBeGreaterThan(0), { timeout: 3000 })
+    expect(tr.source?.name).toBe('Local-first software: an interview with the authors') // job name = the video title
+    expect(tr.download).toMatchObject({ total: 38_400_000, speedBps: 2_400_000, playlist: false })
+    expect(tr.downloadFraction).toBeGreaterThan(0)
+    await finished(tr)
+    expect(tr.phase).toBe('result')
+    expect(tr.transcript?.source_url).toBe(LINK)
+    expect(tr.source).toMatchObject({ url: LINK })
+    expect(tr.source?.downloadId).toMatch(/^dl-/)
+    expect(tr.playablePath).toContain('/downloads/') // the mini player plays the kept audio
+    expect(tr.urlDraft).toBe('')
+  })
+
+  it('an invalid link never starts a job and shows an inline message', async () => {
+    const { backend } = setup()
+    const spy = vi.spyOn(backend, 'transcribe')
+    const tr = useTranscribeStore()
+    tr.urlDraft = 'youtube.com/watch'
+    expect(await tr.transcribeUrl()).toBe(false)
+    expect(spy).not.toHaveBeenCalled()
+    expect(tr.phase).toBe('empty')
+    expect(tr.urlError).toMatch(/start with http/)
+    tr.urlDraft = ''
+    tr.urlTouched = true
+    expect(await tr.transcribeUrl()).toBe(false)
+    expect(tr.urlError).toBe('Paste a link first.')
+  })
+
+  it('shows "Waiting N s" for the rate-limit sleep and counts down', async () => {
+    const { backend } = setup({ timeScale: 0.02 })
+    backend.control.hold('stt:waiting')
+    const tr = useTranscribeStore()
+    await tr.transcribeUrl(LINK)
+    await vi.waitFor(() => expect(tr.download?.waitLeft).toBe(7), { timeout: 3000 })
+    expect(tr.downloadFraction).toBeNull() // no bar while waiting
+    await vi.waitFor(() => expect(tr.download?.waitLeft).toBeLessThan(7), { timeout: 3000 })
+    backend.control.release()
+    await vi.waitFor(() => expect(tr.download?.waitLeft).toBeNull(), { timeout: 3000 })
+    await finished(tr)
+    expect(tr.phase).toBe('result')
+  })
+
+  it('every download error keeps the link filled in, and Retry downloads again', async () => {
+    const { backend } = setup()
+    const tr = useTranscribeStore()
+    for (const [u, code] of [
+      ['https://youtube.com/live', 'download_live'],
+      ['https://youtube.com/private', 'download_login'],
+      ['https://open.spotify.com/episode/1', 'download_drm'],
+      ['https://example.com/notfound', 'download_not_found'],
+      ['https://example.com/offline', 'download_network'],
+      ['https://example.com/noaudio', 'download_no_audio'],
+      ['https://example.com/diskfull', 'disk_space'],
+      ['https://example.com/fail', 'download_failed'],
+    ] as const) {
+      await tr.startNew()
+      tr.urlDraft = u
+      await tr.transcribeUrl()
+      await finished(tr)
+      expect(tr.phase, u).toBe('error')
+      expect(tr.error?.code, u).toBe(code)
+      expect(tr.urlDraft, `${u} stays filled in`).toBe(u)
+      expect(tr.source?.path).toBeNull() // nothing was saved
+    }
+    // the same link now works → Retry runs the download again
+    await tr.startNew()
+    tr.urlDraft = 'https://example.com/ep.mp3'
+    await tr.transcribeUrl()
+    await finished(tr)
+    expect(tr.phase).toBe('result')
+    expect((await backend.workspaceGet()).pending_url).toBeNull()
+  })
+
+  it('a fallback to the system downloader is shown while it happens', async () => {
+    setup({ timeScale: 0.02 })
+    const tr = useTranscribeStore()
+    await tr.transcribeUrl('https://example.com/fallback/ep')
+    await vi.waitFor(() => expect(tr.download?.fallback).toBe('Bundled downloader failed, retried with system yt-dlp'), { timeout: 3000 })
+    await finished(tr)
+    expect(tr.phase).toBe('result') // the retry worked
+  })
+
+  it('cancel during the download works like a job cancel: back to empty, link still filled in, no error shown', async () => {
+    setup({ timeScale: 0.05 })
+    const tr = useTranscribeStore()
+    await tr.transcribeUrl(LINK)
+    await vi.waitFor(() => expect(tr.currentStage).toBe('downloading'))
+    await tr.cancel()
+    await finished(tr)
+    expect(tr.phase).toBe('empty')
+    expect(tr.error).toBeNull()
+    expect(tr.urlDraft).toBe(LINK)
+    expect(tr.download?.waitLeft ?? null).toBeNull() // no countdown left running
+  })
+
+  it('re-transcribing in another language uses the kept audio (no second download)', async () => {
+    const { backend } = setup()
+    const tr = useTranscribeStore()
+    await tr.transcribeUrl(LINK)
+    await finished(tr)
+    const id = tr.source!.downloadId!
+    const spy = vi.spyOn(backend, 'transcribe')
+    await tr.retranscribe('de')
+    expect(spy.mock.calls[0]![0].source).toMatchObject({ kind: 'path' })
+    await finished(tr)
+    expect(tr.phase).toBe('result')
+    expect(tr.transcript?.download_id).toBe(id)
+    expect(tr.transcript?.source_url).toBe(LINK)
+    expect(tr.isUrlJob).toBe(true)
+  })
+
+  it('"Save audio" exports the downloaded file as it came, or converted', async () => {
+    const { backend } = setup()
+    const tr = useTranscribeStore()
+    await tr.transcribeUrl(LINK)
+    await finished(tr)
+    const save = vi.spyOn(backend, 'saveFile')
+    const exp = vi.spyOn(backend, 'exportDownload')
+    await tr.saveAudio('original')
+    expect(save).toHaveBeenLastCalledWith(expect.stringMatching(/\.m4a$/), ['m4a'])
+    expect(exp).toHaveBeenLastCalledWith(tr.source!.downloadId, null, expect.any(String))
+    await tr.saveAudio('mp3')
+    expect(exp).toHaveBeenLastCalledWith(tr.source!.downloadId, 'mp3', expect.stringMatching(/\.mp3$/))
+  })
+
+  it('a restored URL result keeps its link, audio and re-transcribe ability; an interrupted download refills the field', async () => {
+    const { backend } = setup()
+    const tr = useTranscribeStore()
+    tr.restore({ text: 'x', source_name: 'Episode', language: 'en', duration_s: 5, words: 1, edited: false, exported_or_copied: false, recording_id: null, source_url: LINK, download_id: 'dl-0123456789abcdef', media_path: '/mock/downloads/dl-0123456789abcdef/audio.m4a' })
+    expect(tr.phase).toBe('result')
+    expect(tr.playablePath).toBe('/mock/downloads/dl-0123456789abcdef/audio.m4a')
+    expect(tr.isUrlJob).toBe(true)
+    await backend.workspaceUpdate({ transcript: null, tts: null, clear_transcript: true, clear_tts: false })
+  })
+
+  it('refuses while downloads are switched off', async () => {
+    const { backend } = setup({ downloadsOff: true })
+    const app = useAppStore()
+    await app.load()
+    const spy = vi.spyOn(backend, 'transcribe')
+    const tr = useTranscribeStore()
+    expect(await tr.transcribeUrl(LINK)).toBe(false)
+    expect(spy).not.toHaveBeenCalled()
+    expect(tr.phase).toBe('empty')
+  })
+
+  it('does nothing while a recording is running or another job is processing', async () => {
+    setup({ timeScale: 0.05 })
+    const tr = useTranscribeStore()
+    await tr.transcribeFile('/a/one.wav')
+    expect(await tr.transcribeUrl(LINK)).toBe(false)
+    expect(tr.source?.name).toBe('one.wav')
+    await tr.cancel()
+    await finished(tr)
+  })
+})
+

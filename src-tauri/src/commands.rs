@@ -4,6 +4,7 @@
 use crate::ipc::*;
 use crate::state::*;
 use parlo_core::audio::encode;
+use parlo_core::download::{self, DownloadEvent, DownloadRequest, Tools};
 use parlo_core::jobs::JobCtx;
 use parlo_core::platform::DeviceSelector;
 use parlo_core::recorder::sidecar::{RecState, Sidecar};
@@ -83,8 +84,10 @@ pub fn settings_update(state: S<'_>, patch: SettingsPatch) -> IpcResult<Settings
     // "" means "follow the system default input" (the DTO avoids Option<Option<_>>)
     if let Some(o) = patch.as_object_mut() {
         o.retain(|_, v| !v.is_null()); // null = leave unchanged
-        if o.get("input_device").and_then(|v| v.as_str()) == Some("") {
-            o.insert("input_device".into(), serde_json::Value::Null);
+        for k in ["input_device", "downloader_path", "cookies_browser"] {
+            if o.get(k).and_then(|v| v.as_str()) == Some("") {
+                o.insert(k.into(), serde_json::Value::Null);
+            }
         }
     }
     let mut cur = state.settings.lock().unwrap();
@@ -342,10 +345,15 @@ pub fn recording_discard(app: AppHandle, state: S<'_>, id: String) -> IpcResult<
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum JobRequestFile {
     Stt {
+        /// empty while a URL job is still downloading
         path: String,
         recording_id: Option<String>,
         source_name: String,
         language: String,
+        #[serde(default)]
+        source_url: Option<String>,
+        #[serde(default)]
+        download_id: Option<String>,
     },
     Tts {
         blocks: Vec<(String, bool)>,
@@ -388,10 +396,15 @@ pub fn recoverables_list(state: S<'_>) -> IpcResult<Vec<RecoverableDto>> {
         for e in rd.flatten() {
             let id = e.file_name().to_string_lossy().to_string();
             match read_request(&e.path()) {
-                Some(JobRequestFile::Stt { source_name, .. }) => out.push(RecoverableDto::SttJob {
-                    job_id: id,
-                    source_name,
-                }),
+                Some(JobRequestFile::Stt {
+                    source_name, path, ..
+                }) if !path.is_empty() && Path::new(&path).exists() => {
+                    out.push(RecoverableDto::SttJob {
+                        job_id: id,
+                        source_name,
+                    })
+                }
+                Some(JobRequestFile::Stt { .. }) => {} // a download that never finished: thrown away at launch
                 Some(JobRequestFile::Tts { blocks, voice, .. }) => {
                     let preview: String = blocks
                         .iter()
@@ -449,42 +462,205 @@ fn notify_if_no_window(app: &AppHandle, title: &str, body: &str) {
     }
 }
 
-#[allow(clippy::too_many_arguments)] // one internal entry point shared by transcribe_start and stt_resume
-fn start_stt(
-    app: AppHandle,
-    state: Arc<AppState>,
+/// Everything `start_stt` needs to know about where the audio comes from.
+struct SttStart {
     job_id: String,
-    path: PathBuf,
+    /// `None` for a URL job that still has to be downloaded
+    path: Option<PathBuf>,
+    /// the link (URL jobs, and re-runs on audio that was downloaded earlier)
+    url: Option<String>,
+    download_id: Option<String>,
     recording_id: Option<String>,
     source_name: String,
     language: String,
+}
+
+const DOWNLOADS_OFF: &str =
+    "Downloads from links are turned off. Turn them on in Settings → Downloads.";
+
+/// The settings, or an error when the user switched URL downloads off ("the commands refuse").
+fn require_downloads(state: &AppState) -> IpcResult<Settings> {
+    let s = state.settings.lock().unwrap().clone();
+    if !s.allow_downloads {
+        return Err(IpcError::new("download_disabled", DOWNLOADS_OFF));
+    }
+    Ok(s)
+}
+
+fn ipc_from_download(e: download::DownloadError) -> IpcError {
+    IpcError {
+        code: e.kind.code().into(),
+        message: e.message,
+        detail: (!e.detail.is_empty()).then_some(e.detail),
+    }
+}
+
+fn send_download_event(ch: &Channel<SttEventDto>, e: DownloadEvent) {
+    let dto = match e {
+        DownloadEvent::Info {
+            title,
+            duration_s,
+            playlist,
+        } => SttEventDto::DownloadInfo {
+            title,
+            duration_s,
+            playlist,
+        },
+        DownloadEvent::Waiting { secs } => SttEventDto::DownloadWaiting { secs },
+        DownloadEvent::Progress {
+            downloaded,
+            total,
+            speed_bps,
+            eta_s,
+        } => SttEventDto::DownloadProgress {
+            downloaded_bytes: downloaded,
+            total_bytes: total,
+            speed_bps,
+            eta_s,
+        },
+        DownloadEvent::Fallback { from, to, reason } => {
+            tracing::info!("downloader fallback {} → {}: {reason}", from.id(), to.id());
+            SttEventDto::DownloaderFallback {
+                message: match to {
+                    download::ToolKind::System => {
+                        "Bundled downloader failed, retried with system yt-dlp".to_string()
+                    }
+                    download::ToolKind::Curl => {
+                        "yt-dlp couldn’t read this link, trying a direct download".to_string()
+                    }
+                    download::ToolKind::Bundled => "Retrying the download".to_string(),
+                },
+                from: from.id().into(),
+                to: to.id().into(),
+            }
+        }
+    };
+    let _ = ch.send(dto);
+}
+
+fn set_pending_url(state: &AppState, url: Option<String>) {
+    let mut ws = state.workspace.lock().unwrap();
+    if ws.pending_url != url {
+        ws.pending_url = url;
+        let _ = ws.save(&state.paths);
+    }
+}
+
+fn start_stt(
+    app: AppHandle,
+    state: Arc<AppState>,
+    st: SttStart,
     on_event: Channel<SttEventDto>,
 ) -> IpcResult<u32> {
-    let dir = job_dir_for(&state, &job_id);
+    let dir = job_dir_for(&state, &st.job_id);
     write_request(
         &dir,
         &JobRequestFile::Stt {
-            path: path.display().to_string(),
-            recording_id: recording_id.clone(),
-            source_name: source_name.clone(),
-            language: language.clone(),
+            path: st
+                .path
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default(),
+            recording_id: st.recording_id.clone(),
+            source_name: st.source_name.clone(),
+            language: st.language.clone(),
+            source_url: st.url.clone(),
+            download_id: st.download_id.clone(),
         },
     );
-    let mut job = SttJob::new(&path, dir.join("work"), state.paths.decode_cache());
-    job.language = if language == "auto" {
-        LanguageSetting::Auto
-    } else {
-        LanguageSetting::Code(language.clone())
-    };
-    job.threads = crate::native::stt_threads(&state.settings.lock().unwrap());
-    job.fallback_decoder = state.platform.fallback_decoder.clone();
+    let threads = crate::native::stt_threads(&state.settings.lock().unwrap());
+    let fallback_decoder = state.platform.fallback_decoder.clone();
     let stt = state.stt.clone();
     let st2 = state.clone();
-    let label = format!("Transcribe {source_name}");
+    let label = format!("Transcribe {}", st.source_name);
     let id = state.jobs.submit(
         parlo_core::models::EngineKind::Stt,
         &label,
         move |ctx: &JobCtx| {
+            let SttStart {
+                path,
+                url,
+                download_id,
+                recording_id,
+                language,
+                ..
+            } = &st;
+            let mut source_name = st.source_name.clone();
+            let mut download_id = download_id.clone();
+            let mut created_download = false;
+            let path: PathBuf = match path {
+                Some(p) => p.clone(),
+                None => {
+                    // ---- stage 0: download (URL jobs). Only a child process touches the network. ----
+                    let url = url.clone().unwrap_or_default();
+                    let id = download::store::id_for_url(&url);
+                    let job_dir = download::store::job_dir(&st2.paths, &id);
+                    let _ = on_event.send(SttEventDto::Stage {
+                        stage: "downloading".into(),
+                    });
+                    let settings = st2.settings.lock().unwrap().clone();
+                    let tools = Tools::discover(settings.downloader_path.as_deref());
+                    let req = DownloadRequest {
+                        url: url.clone(),
+                        job_dir: job_dir.clone(),
+                        cache_dir: st2.paths.cache.clone(),
+                        opts: settings.download_options(),
+                    };
+                    let res = download::download(
+                        &req,
+                        &tools.fetchers(),
+                        &mut |e| send_download_event(&on_event, e),
+                        &ctx.cancel,
+                    );
+                    match res {
+                        Ok(d) => {
+                            created_download = true;
+                            download_id = Some(id.clone());
+                            source_name = d.title.clone();
+                            write_request(
+                                &dir,
+                                &JobRequestFile::Stt {
+                                    path: d.path.display().to_string(),
+                                    recording_id: None,
+                                    source_name: d.title.clone(),
+                                    language: language.clone(),
+                                    source_url: Some(url.clone()),
+                                    download_id: Some(id.clone()),
+                                },
+                            );
+                            set_pending_url(&st2, None);
+                            let _ = on_event.send(SttEventDto::Downloaded {
+                                download_id: id,
+                                media_path: d.path.display().to_string(),
+                                title: d.title.clone(),
+                                bytes: d.bytes,
+                            });
+                            d.path
+                        }
+                        Err(e) => {
+                            // never leave a half-written file (or a request that points at one) behind
+                            let _ = std::fs::remove_dir_all(&job_dir);
+                            let _ = std::fs::remove_dir_all(&dir);
+                            if e.kind == download::DownloadErrorKind::Cancelled {
+                                set_pending_url(&st2, None);
+                            }
+                            let _ = on_event.send(SttEventDto::Error {
+                                error: ipc_from_download(e.clone()),
+                            });
+                            return Err(e.into());
+                        }
+                    }
+                }
+            };
+
+            let mut job = SttJob::new(&path, dir.join("work"), st2.paths.decode_cache());
+            job.language = if language == "auto" {
+                LanguageSetting::Auto
+            } else {
+                LanguageSetting::Code(language.clone())
+            };
+            job.threads = threads;
+            job.fallback_decoder = fallback_decoder.clone();
             let _ = on_event.send(SttEventDto::Stage {
                 stage: "loading_model".into(),
             });
@@ -547,9 +723,17 @@ fn start_stt(
                         processing_s: t.processing_s,
                         source_name: source_name.clone(),
                         recording_id: recording_id.clone(),
+                        source_url: url.clone(),
+                        download_id: download_id.clone(),
+                        media_path: download_id.as_ref().map(|_| path.display().to_string()),
                     };
                     {
                         let mut ws = st2.workspace.lock().unwrap();
+                        let replaced = ws
+                            .transcript
+                            .as_ref()
+                            .and_then(|t| t.download_id.clone())
+                            .filter(|old| Some(old) != download_id.as_ref());
                         ws.transcript = Some(WorkspaceTranscript {
                             text: t.text.clone(),
                             source_name: source_name.clone(),
@@ -559,10 +743,16 @@ fn start_stt(
                             edited: false,
                             exported_or_copied: false,
                             recording_id: recording_id.clone(),
+                            source_url: url.clone(),
+                            download_id: download_id.clone(),
                         });
                         let _ = ws.save(&st2.paths);
+                        // the previous transcription's downloaded audio is no longer needed
+                        if let Some(old) = replaced {
+                            download::store::remove_job(&st2.paths, &old);
+                        }
                     }
-                    if let Some(rid) = &recording_id {
+                    if let Some(rid) = recording_id {
                         let p = st2.recordings_dir().join(format!("{rid}.json"));
                         if let Ok(mut sc) = Sidecar::read(&p) {
                             sc.transcribed = true;
@@ -577,7 +767,13 @@ fn start_stt(
                 Err(parlo_core::Error::Cancelled) => {
                     if ctx.cancel.load(Ordering::SeqCst) {
                         let _ = std::fs::remove_dir_all(&dir); // an explicit cancel discards the checkpoint
-                                                               // the UI waits for a terminal event on this channel to leave its "Cancelling…" state
+                        if created_download {
+                            // a fresh download nobody has seen a result of: not worth keeping
+                            if let Some(id) = &download_id {
+                                download::store::remove_job(&st2.paths, id);
+                            }
+                        }
+                        // the UI waits for a terminal event on this channel to leave its "Cancelling…" state
                         let _ = on_event.send(SttEventDto::Error {
                             error: IpcError::new("cancelled", "Cancelled"),
                         });
@@ -604,45 +800,83 @@ pub fn transcribe_start(
     request: TranscribeRequest,
     on_event: Channel<SttEventDto>,
 ) -> IpcResult<u32> {
-    let (path, recording_id, name) = match request.source {
+    let st = match request.source {
         SttSource::Path { path } => {
             let p = PathBuf::from(&path);
-            let name = p
+            let mut name = p
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| path.clone());
             // let the mini player read the source through the asset protocol
             let _ = app.asset_protocol_scope().allow_file(&p);
-            (p, None, name)
+            if !p.exists() {
+                return Err(IpcError::new(
+                    "io",
+                    format!("The file {} no longer exists.", p.display()),
+                ));
+            }
+            // audio that "Transcribe from URL" downloaded earlier (re-transcribe, retry): keep its link and title
+            let mut url = None;
+            let download_id = download::store::id_of_media_path(&state.paths, &p);
+            if let Some(id) = &download_id {
+                if let Some(m) =
+                    download::store::read_meta(&download::store::job_dir(&state.paths, id))
+                {
+                    name = m.title;
+                    url = Some(m.url);
+                }
+            }
+            SttStart {
+                job_id: format!("stt-{:016x}", fnv(input_key_for(&p).as_bytes())),
+                path: Some(p),
+                url,
+                download_id,
+                recording_id: None,
+                source_name: name,
+                language: request.language,
+            }
         }
         SttSource::Recording { recording_id } => {
             if recording_id.contains('/') || recording_id.contains("..") {
                 return Err(IpcError::new("invalid", "Invalid recording id."));
             }
-            (
-                state.recordings_dir().join(format!("{recording_id}.wav")),
-                Some(recording_id.clone()),
-                format!("Recording {}", recording_id.trim_start_matches("rec-")),
-            )
+            let p = state.recordings_dir().join(format!("{recording_id}.wav"));
+            if !p.exists() {
+                return Err(IpcError::new(
+                    "io",
+                    format!("The file {} no longer exists.", p.display()),
+                ));
+            }
+            SttStart {
+                job_id: format!("stt-{:016x}", fnv(input_key_for(&p).as_bytes())),
+                path: Some(p),
+                url: None,
+                download_id: None,
+                source_name: format!("Recording {}", recording_id.trim_start_matches("rec-")),
+                recording_id: Some(recording_id),
+                language: request.language,
+            }
+        }
+        SttSource::Url { url } => {
+            require_downloads(&state)?;
+            let url = download::url::validate_url(&url).map_err(ipc_from_download)?;
+            let _ = app
+                .asset_protocol_scope()
+                .allow_directory(state.paths.downloads(), true);
+            // remembered until the download completes, so a quit/crash/failure leaves the link ready to retry
+            set_pending_url(&state, Some(url.clone()));
+            SttStart {
+                job_id: format!("url-{:016x}", download::store::fnv(url.as_bytes())),
+                path: None,
+                source_name: download::url::fallback_title(&url),
+                url: Some(url),
+                download_id: None,
+                recording_id: None,
+                language: request.language,
+            }
         }
     };
-    if !path.exists() {
-        return Err(IpcError::new(
-            "io",
-            format!("The file {} no longer exists.", path.display()),
-        ));
-    }
-    let job_id = format!("stt-{:016x}", fnv(input_key_for(&path).as_bytes()));
-    start_stt(
-        app,
-        state.inner().clone(),
-        job_id,
-        path,
-        recording_id,
-        name,
-        request.language,
-        on_event,
-    )
+    start_stt(app, state.inner().clone(), st, on_event)
 }
 
 #[tauri::command]
@@ -662,14 +896,20 @@ pub fn stt_resume(
             recording_id,
             source_name,
             language,
-        }) => start_stt(
+            source_url,
+            download_id,
+        }) if !path.is_empty() && Path::new(&path).exists() => start_stt(
             app,
             state.inner().clone(),
-            job_id,
-            PathBuf::from(path),
-            recording_id,
-            source_name,
-            language,
+            SttStart {
+                job_id,
+                path: Some(PathBuf::from(path)),
+                url: source_url,
+                download_id,
+                recording_id,
+                source_name,
+                language,
+            },
             on_event,
         ),
         _ => Err(IpcError::new("invalid", "That job can't be resumed.")),
@@ -1121,7 +1361,14 @@ fn ws_dto(state: &AppState, ws: &Workspace) -> WorkspaceDto {
             edited: t.edited,
             exported_or_copied: t.exported_or_copied,
             recording_id: t.recording_id.clone(),
+            source_url: t.source_url.clone(),
+            download_id: t.download_id.clone(),
+            media_path: t.download_id.as_ref().and_then(|id| {
+                download::store::find_media(&download::store::job_dir(&state.paths, id))
+                    .map(|p| p.display().to_string())
+            }),
         }),
+        pending_url: ws.pending_url.clone(),
         tts: ws.tts.as_ref().map(|t| {
             let (segments, dur) = match &t.output_id {
                 Some(id) => {
@@ -1166,6 +1413,9 @@ pub fn workspace_get(app: AppHandle, state: S<'_>) -> WorkspaceDto {
     let _ = app
         .asset_protocol_scope()
         .allow_directory(state.models.previews_dir(), true);
+    let _ = app
+        .asset_protocol_scope()
+        .allow_directory(state.paths.downloads(), true);
     ws_dto(&state, &ws)
 }
 
@@ -1174,9 +1424,19 @@ pub fn workspace_get(app: AppHandle, state: S<'_>) -> WorkspaceDto {
 pub fn workspace_update(state: S<'_>, patch: WorkspacePatch) -> IpcResult<()> {
     let mut ws = state.workspace.lock().unwrap();
     if patch.clear_transcript {
-        ws.transcript = None;
+        // "New" / cleared: the downloaded audio of the transcript that goes away goes with it
+        if let Some(id) = ws.transcript.take().and_then(|t| t.download_id) {
+            download::store::remove_job(&state.paths, &id);
+        }
     }
     if let Some(t) = patch.transcript {
+        // only the core decides which download a transcript owns (the UI echoes what it was given)
+        let (source_url, download_id) = match &ws.transcript {
+            Some(cur) if cur.download_id == t.download_id => {
+                (cur.source_url.clone(), cur.download_id.clone())
+            }
+            _ => (t.source_url, t.download_id),
+        };
         ws.transcript = Some(WorkspaceTranscript {
             text: t.text,
             source_name: t.source_name,
@@ -1186,6 +1446,8 @@ pub fn workspace_update(state: S<'_>, patch: WorkspacePatch) -> IpcResult<()> {
             edited: t.edited,
             exported_or_copied: t.exported_or_copied,
             recording_id: t.recording_id,
+            source_url,
+            download_id,
         });
     }
     if patch.clear_tts {
@@ -1312,6 +1574,12 @@ fn storage_entries(state: &AppState) -> Vec<StorageEntryDto> {
             dir_size(&state.paths.decode_cache()),
             state.paths.decode_cache(),
         ),
+        entry(
+            "downloads",
+            "Downloaded audio",
+            dir_size(&state.paths.downloads()),
+            state.paths.downloads(),
+        ),
         entry("models", "Models", models, m.pockettts()),
     ]
 }
@@ -1350,4 +1618,146 @@ pub fn storage_clear(state: S<'_>, kind: String) -> IpcResult<Vec<StorageEntryDt
         ws.save(&state.paths)?;
     }
     Ok(storage_entries(&state))
+}
+
+// =============================================================================================== downloads
+/// Settings → Downloads: which downloader(s) would run, their versions, and the browsers whose cookies could be read.
+/// Runs `yt-dlp --version` / `--list-impersonate-targets` (no network), so it's async.
+#[tauri::command]
+#[specta::specta]
+pub async fn downloads_info(state: S<'_>) -> IpcResult<DownloadsInfoDto> {
+    let settings = require_downloads(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let tools = Tools::discover(settings.downloader_path.as_deref());
+        let cancel = std::sync::atomic::AtomicBool::new(false);
+        let mut list = Vec::new();
+        for (kind, path) in [("bundled", &tools.bundled), ("system", &tools.system)] {
+            let Some(p) = path else { continue };
+            let (version, impersonate, error) =
+                match download::ytdlp::capabilities(p, true, &cancel) {
+                    Ok(c) => (Some(c.version), c.impersonate_chrome, None),
+                    Err(e) => (None, None, Some(e.message)),
+                };
+            list.push(DownloaderToolDto {
+                kind: kind.into(),
+                path: p.display().to_string(),
+                version,
+                impersonate,
+                error,
+            });
+        }
+        let browsers =
+            download::discover::detect_browsers(&download::discover::BrowserSearch::system())
+                .into_iter()
+                .map(|b| BrowserDto {
+                    id: b.id.into(),
+                    label: b.label.into(),
+                })
+                .collect();
+        DownloadsInfoDto {
+            tools: list,
+            curl: tools.curl.map(|p| p.display().to_string()),
+            deno: tools.deno.map(|p| p.display().to_string()),
+            browsers,
+        }
+    })
+    .await
+    .map_err(|e| IpcError::new("other", e.to_string()))
+}
+
+/// Save the downloaded audio: as downloaded (`format` null) or converted to WAV / M4A / MP3.
+#[tauri::command]
+#[specta::specta]
+pub async fn export_download(
+    state: S<'_>,
+    download_id: String,
+    format: Option<AudioExportFormat>,
+    dest: String,
+) -> IpcResult<String> {
+    if !download::store::valid_id(&download_id) {
+        return Err(IpcError::new("invalid", "Invalid download id."));
+    }
+    let dest = safe_dest(&dest)?;
+    let media = download::store::find_media(&download::store::job_dir(&state.paths, &download_id))
+        .ok_or_else(|| {
+            IpcError::new(
+                "io",
+                "That audio is no longer available. Transcribe the link again.",
+            )
+        })?;
+    let aac = state.platform.aac.clone();
+    let tmp = state.paths.cache.clone();
+    let d2 = dest.clone();
+    tauri::async_runtime::spawn_blocking(move || -> parlo_core::Result<()> {
+        let Some(format) = format else {
+            return std::fs::copy(&media, &d2)
+                .map(|_| ())
+                .map_err(|e| parlo_core::Error::io(&d2, e));
+        };
+        std::fs::create_dir_all(&tmp).map_err(|e| parlo_core::Error::io(&tmp, e))?;
+        let wav = tmp.join(format!("dl-export-{}.wav", std::process::id()));
+        let r = (|| {
+            parlo_core::audio::prepare::decode_to_native_wav(
+                &media,
+                &wav,
+                &std::sync::atomic::AtomicBool::new(false),
+            )?;
+            match format {
+                AudioExportFormat::Wav => std::fs::copy(&wav, &d2)
+                    .map(|_| ())
+                    .map_err(|e| parlo_core::Error::io(&d2, e)),
+                AudioExportFormat::Mp3 => encode::export_mp3(std::slice::from_ref(&wav), &d2, 96),
+                AudioExportFormat::M4a => {
+                    encode::export_m4a(&*aac, std::slice::from_ref(&wav), &d2, 96, &tmp)
+                }
+            }
+        })();
+        let _ = std::fs::remove_file(&wav);
+        r
+    })
+    .await
+    .map_err(|e| IpcError::new("other", e.to_string()))??;
+    Ok(dest.display().to_string())
+}
+
+/// Launch-time orphan sweep: every download that isn't the current transcript's (or a resumable job's) audio is thrown
+/// away — partial downloads from a quit/crash included — and URL jobs that never finished leave no request behind.
+pub fn sweep_downloads(state: &AppState) {
+    let mut keep = std::collections::HashSet::new();
+    if let Some(id) = state
+        .workspace
+        .lock()
+        .unwrap()
+        .transcript
+        .as_ref()
+        .and_then(|t| t.download_id.clone())
+    {
+        keep.insert(id);
+    }
+    if let Ok(rd) = std::fs::read_dir(state.paths.jobs()) {
+        for e in rd.flatten() {
+            if let Some(JobRequestFile::Stt {
+                path,
+                source_url,
+                download_id,
+                ..
+            }) = read_request(&e.path())
+            {
+                let usable = !path.is_empty() && Path::new(&path).exists();
+                match (download_id, usable) {
+                    (Some(id), true) => {
+                        keep.insert(id);
+                    }
+                    _ if source_url.is_some() && !usable => {
+                        let _ = std::fs::remove_dir_all(e.path());
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    let removed = download::store::sweep(&state.paths, &keep);
+    if !removed.is_empty() {
+        tracing::info!("download sweep removed {} leftover item(s)", removed.len());
+    }
 }

@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { backend } from '../backend'
 import type { IpcError, SttEventDto, TranscriptDto, TranscriptExportFormat, WorkspaceTranscriptDto } from '../bindings'
 import { baseName, countWords, formatClock, stripExt } from '../lib/format'
+import { checkUrl, fallbackTitle } from '../lib/url'
 import { wsPatch } from '../lib/workspace'
 import { useAppStore } from './app'
 import { useRecorderStore } from './recorder'
@@ -17,9 +18,10 @@ export interface Paragraph {
   endS: number
 }
 
-export type SttStage = 'preparing' | 'detecting_speech' | 'detecting_language' | 'loading_model' | 'transcribing'
-export const STAGE_ORDER: SttStage[] = ['preparing', 'detecting_speech', 'detecting_language', 'loading_model', 'transcribing']
+export type SttStage = 'downloading' | 'preparing' | 'detecting_speech' | 'detecting_language' | 'loading_model' | 'transcribing'
+export const STAGE_ORDER: SttStage[] = ['downloading', 'preparing', 'detecting_speech', 'detecting_language', 'loading_model', 'transcribing']
 export const STAGE_LABEL: Record<SttStage, string> = {
+  downloading: 'Downloading audio',
   preparing: 'Preparing audio',
   detecting_speech: 'Finding speech',
   detecting_language: 'Detecting language',
@@ -31,6 +33,25 @@ interface Source {
   name: string
   path: string | null
   recordingId: string | null
+  /** the link this audio comes from (URL jobs) */
+  url?: string | null
+  /** directory id of the kept download (`dl-…`), once the audio is on disk */
+  downloadId?: string | null
+}
+
+/** What the Downloading stage knows: title, bytes, speed, the rate-limit wait and a fallback notice. */
+export interface DownloadState {
+  title: string | null
+  durationS: number | null
+  playlist: boolean
+  downloaded: number
+  total: number | null
+  speedBps: number | null
+  etaS: number | null
+  /** seconds left of the rate-limit sleep (counts down once a second while shown), `null` when not waiting */
+  waitLeft: number | null
+  /** e.g. "Bundled downloader failed, retried with system yt-dlp" */
+  fallback: string | null
 }
 
 /**
@@ -61,6 +82,12 @@ export const useTranscribeStore = defineStore('transcribe', () => {
   const jobId = ref<number | null>(null)
   const cancelling = ref(false)
   const detailsOpen = ref(false)
+  // --- "Transcribe from URL"
+  /** the link field's text; survives an error or cancel so retrying is one click, refilled from the workspace on launch */
+  const urlDraft = ref('')
+  const urlTouched = ref(false)
+  const download = ref<DownloadState | null>(null)
+  let waitTimer: ReturnType<typeof setInterval> | null = null
 
   const phase = computed<TranscribePhase>(() => {
     if (recorder.active) return 'recording'
@@ -75,6 +102,15 @@ export const useTranscribeStore = defineStore('transcribe', () => {
     return null
   })
   const words = computed(() => countWords(text.value))
+  /** inline problem with the typed link (only after the user tried to start, or left the field) */
+  const urlError = computed(() => (urlTouched.value ? checkUrl(urlDraft.value).problem : null))
+  const downloadFraction = computed(() => {
+    const d = download.value
+    if (!d || d.waitLeft != null || !d.total) return null
+    return Math.min(1, d.downloaded / d.total)
+  })
+  /** stage list shows "Downloading" only for URL jobs */
+  const isUrlJob = computed(() => !!source.value?.url)
 
   /** audio file the mini player plays: the recording's WAV, or the original file */
   const playablePath = computed(() => {
@@ -83,7 +119,25 @@ export const useTranscribeStore = defineStore('transcribe', () => {
     return s.path
   })
 
+  function stopWaitTimer() {
+    if (waitTimer) clearInterval(waitTimer)
+    waitTimer = null
+  }
+  /** "Waiting N s": the only timer here, alive just while the countdown is on screen */
+  function startWait(secs: number) {
+    stopWaitTimer()
+    const end = Date.now() + secs * 1000
+    if (download.value) download.value.waitLeft = Math.max(0, Math.ceil(secs))
+    waitTimer = setInterval(() => {
+      const left = Math.max(0, Math.ceil((end - Date.now()) / 1000))
+      if (download.value) download.value.waitLeft = left
+      if (left <= 0) stopWaitTimer()
+    }, 250)
+  }
+
   function resetRun() {
+    stopWaitTimer()
+    download.value = null
     currentStage.value = 'preparing'
     stageFraction.value = 0
     detectedLanguage.value = null
@@ -99,6 +153,29 @@ export const useTranscribeStore = defineStore('transcribe', () => {
       case 'stage':
         currentStage.value = ev.stage as SttStage
         stageFraction.value = 0
+        if (ev.stage === 'downloading' && !download.value) {
+          download.value = { title: null, durationS: null, playlist: false, downloaded: 0, total: null, speedBps: null, etaS: null, waitLeft: null, fallback: null }
+        }
+        break
+      case 'download_info':
+        if (download.value) Object.assign(download.value, { title: ev.title, durationS: ev.duration_s, playlist: ev.playlist })
+        if (source.value) source.value = { ...source.value, name: ev.title } // job name = the video/episode title
+        break
+      case 'download_waiting':
+        startWait(ev.secs)
+        break
+      case 'download_progress':
+        stopWaitTimer()
+        if (download.value) Object.assign(download.value, { waitLeft: null, downloaded: ev.downloaded_bytes, total: ev.total_bytes, speedBps: ev.speed_bps, etaS: ev.eta_s })
+        break
+      case 'downloader_fallback':
+        if (download.value) download.value.fallback = ev.message
+        break
+      case 'downloaded':
+        stopWaitTimer()
+        if (download.value) download.value.waitLeft = null
+        if (source.value) source.value = { ...source.value, name: ev.title, path: ev.media_path, downloadId: ev.download_id }
+        urlDraft.value = '' // the link did its job; a failure before this point keeps it for a one-click retry
         break
       case 'stage_progress':
         stageFraction.value = ev.fraction
@@ -115,6 +192,8 @@ export const useTranscribeStore = defineStore('transcribe', () => {
         )
         break
       case 'done':
+        stopWaitTimer()
+        if (source.value && ev.transcript.download_id) source.value = { ...source.value, path: ev.transcript.media_path ?? source.value.path, downloadId: ev.transcript.download_id, url: ev.transcript.source_url ?? source.value.url }
         transcript.value = ev.transcript
         text.value = ev.transcript.text
         edited.value = false
@@ -125,6 +204,8 @@ export const useTranscribeStore = defineStore('transcribe', () => {
         break
       case 'error':
         jobId.value = null
+        stopWaitTimer()
+        if (download.value) download.value.waitLeft = null
         if (ev.error.code === 'cancelled') {
           stage.value = 'idle'
           source.value = null
@@ -148,7 +229,14 @@ export const useTranscribeStore = defineStore('transcribe', () => {
     stage.value = 'processing'
     try {
       jobId.value = await backend().transcribe(
-        { source: src.recordingId ? { kind: 'recording', recording_id: src.recordingId } : { kind: 'path', path: src.path! }, language: lang },
+        {
+          source: src.recordingId
+            ? { kind: 'recording', recording_id: src.recordingId }
+            : src.path
+              ? { kind: 'path', path: src.path }
+              : { kind: 'url', url: src.url! }, // the audio isn't on disk yet: the core downloads it first
+          language: lang,
+        },
         handle,
       )
     } catch (e) {
@@ -157,6 +245,22 @@ export const useTranscribeStore = defineStore('transcribe', () => {
   }
 
   const transcribeFile = (path: string, lang = language.value) => run({ name: baseName(path), path, recordingId: null }, lang)
+
+  /** Start "Transcribe from URL" with `link` (default: the field's text). Invalid links never leave the UI. */
+  async function transcribeUrl(link = urlDraft.value, lang = language.value): Promise<boolean> {
+    if (stage.value === 'processing' || recorder.active) return false
+    if (app.settings && !app.settings.allow_downloads) {
+      toast.error('Downloads from links are turned off. Turn them on in Settings → Downloads.')
+      return false
+    }
+    urlTouched.value = true
+    const c = checkUrl(link)
+    if (!c.url) return false
+    urlDraft.value = c.url
+    urlTouched.value = false
+    await run({ name: fallbackTitle(c.url), path: null, recordingId: null, url: c.url, downloadId: null }, lang)
+    return true
+  }
   const transcribeRecording = (id: string, wavPath: string, name: string, lang = language.value) => run({ name, path: wavPath, recordingId: id }, lang)
 
   /** ⌘R / the Record card: asks for mic permission first when it hasn't been decided. */
@@ -270,13 +374,16 @@ export const useTranscribeStore = defineStore('transcribe', () => {
     }
   }
 
-  async function saveAudio(format: 'wav' | 'm4a' | 'mp3' = 'wav') {
-    const id = source.value?.recordingId
-    if (!id) return
-    const dest = await backend().saveFile(`${stripExt(source.value!.name)}.${format}`, [format])
+  /** `original` (downloaded audio only) copies the file as it came from the site; the others convert. */
+  async function saveAudio(format: 'original' | 'wav' | 'm4a' | 'mp3' = 'wav') {
+    const rid = source.value?.recordingId
+    const did = source.value?.downloadId
+    if (!rid && !did) return
+    const ext = format === 'original' ? (source.value?.path?.split('.').pop() ?? 'm4a') : format
+    const dest = await backend().saveFile(`${stripExt(source.value!.name)}.${ext}`, [ext])
     if (!dest) return
     try {
-      const written = await backend().exportRecording(id, format, dest)
+      const written = rid ? await backend().exportRecording(rid, format as 'wav' | 'm4a' | 'mp3', dest) : await backend().exportDownload(did!, format === 'original' ? null : format, dest)
       toast.success(`Saved ${baseName(written)}`, { action: { label: 'Show in Finder', run: () => void backend().reveal(written) } })
     } catch (e) {
       toast.error(`Couldn't save audio: ${asIpc(e).message}`)
@@ -300,6 +407,8 @@ export const useTranscribeStore = defineStore('transcribe', () => {
     text.value = ''
     edited.value = false
     resetRun()
+    urlDraft.value = ''
+    urlTouched.value = false
     await backend().workspaceUpdate(wsPatch({ clear_transcript: true }))
     return true
   }
@@ -324,6 +433,9 @@ export const useTranscribeStore = defineStore('transcribe', () => {
       edited: edited.value,
       exported_or_copied: exportedOrCopied.value,
       recording_id: t.recording_id,
+      source_url: t.source_url,
+      download_id: t.download_id,
+      media_path: null, // the core owns this one
     }
     try {
       await backend().workspaceUpdate(wsPatch({ transcript: dto }))
@@ -334,7 +446,7 @@ export const useTranscribeStore = defineStore('transcribe', () => {
 
   function restore(w: WorkspaceTranscriptDto) {
     resetRun()
-    source.value = { name: w.source_name, path: null, recordingId: w.recording_id }
+    source.value = { name: w.source_name, path: w.media_path, recordingId: w.recording_id, url: w.source_url, downloadId: w.download_id }
     transcript.value = {
       text: w.text,
       language: w.language,
@@ -345,6 +457,9 @@ export const useTranscribeStore = defineStore('transcribe', () => {
       processing_s: 0,
       source_name: w.source_name,
       recording_id: w.recording_id,
+      source_url: w.source_url,
+      download_id: w.download_id,
+      media_path: w.media_path,
     }
     text.value = w.text
     edited.value = w.edited
@@ -373,6 +488,13 @@ export const useTranscribeStore = defineStore('transcribe', () => {
     cancelling,
     jobId,
     playablePath,
+    urlDraft,
+    urlTouched,
+    urlError,
+    download,
+    downloadFraction,
+    isUrlJob,
+    transcribeUrl,
     transcribeFile,
     transcribeRecording,
     retry,

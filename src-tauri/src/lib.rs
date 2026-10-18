@@ -51,6 +51,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::ui_visibility,
             commands::diagnostics_text,
             commands::quit_confirmed,
+            commands::downloads_info,
+            commands::export_download,
         ])
         .events(collect_events![
             RecorderStateEvent,
@@ -323,6 +325,7 @@ pub fn run() {
             {
                 tracing::warn!("cleanup failed: {e}");
             }
+            commands::sweep_downloads(&state);
             app.manage(state.clone());
             if std::env::var_os("PARLO_SELFTEST").is_some() {
                 selftest::spawn(handle.clone(), state.clone());
@@ -370,6 +373,8 @@ pub fn run() {
             // ggml-metal asserts in its static destructor if a Metal-backed model is still alive at exit(),
             // aborting the process (crash report on every quit) — release the engines first.
             app.state::<Arc<AppState>>().host.unload_all_idle();
+            // a downloader child runs in its own process group: don't leave it behind (its partial file is swept at launch)
+            parlo_core::download::proc::kill_all_children();
         }
         #[cfg(target_os = "macos")]
         RunEvent::Reopen {

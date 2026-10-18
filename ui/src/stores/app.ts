@@ -27,6 +27,8 @@ export const useAppStore = defineStore('app', () => {
   const settings = ref<SettingsDto | null>(null)
   const info = ref<AppInfo | null>(null)
   const settingsOpen = ref(false)
+  /** which Settings section opens first (e.g. 'downloads' from a download error) */
+  const settingsSection = ref<string | null>(null)
   const recoverables = ref<RecoverableDto[]>([])
   const engines = ref<{ stt: EngineStatus; tts: EngineStatus }>({
     stt: { state: 'unloaded', unloadAt: null },
@@ -100,6 +102,7 @@ export const useAppStore = defineStore('app', () => {
     settings,
     info,
     settingsOpen,
+    settingsSection,
     recoverables,
     engines,
     dropHover,

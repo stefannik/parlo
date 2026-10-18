@@ -6,7 +6,8 @@ import Icon from '../components/Icon.vue'
 import LanguageSelect from '../components/LanguageSelect.vue'
 import LevelMeter from '../components/LevelMeter.vue'
 import MenuButton from '../components/MenuButton.vue'
-import { formatClock, formatDurationWords, formatEta } from '../lib/format'
+import { formatBytes, formatClock, formatDurationWords, formatEta } from '../lib/format'
+import { hostOf } from '../lib/url'
 import { languageName } from '../lib/languages'
 import { useAppStore } from '../stores/app'
 import { useRecorderStore } from '../stores/recorder'
@@ -19,15 +20,43 @@ const tr = useTranscribeStore()
 const speed = ref(1)
 const showLang = ref(false)
 
-const visibleStages = computed<SttStage[]>(() => STAGE_ORDER.filter((s) => s !== 'detecting_language' || tr.language === 'auto'))
+const visibleStages = computed<SttStage[]>(() =>
+  STAGE_ORDER.filter((s) => (s !== 'detecting_language' || tr.language === 'auto') && (s !== 'downloading' || tr.isUrlJob)),
+)
+const linksAllowed = computed(() => app.settings?.allow_downloads !== false)
+const downloading = computed(() => tr.currentStage === 'downloading' && !!tr.download)
+/** "42% · 3.1 MB of 7.4 MB · 1.2 MB/s · 5 s left", or "Waiting 7 s…" during the rate-limit sleep */
+const downloadStatus = computed(() => {
+  const d = tr.download
+  if (!d) return ''
+  if (d.waitLeft != null) return `Waiting ${d.waitLeft} s…`
+  if (!d.downloaded) return 'Contacting the site…'
+  const parts: string[] = []
+  const f = tr.downloadFraction
+  if (f != null) parts.push(`${Math.round(f * 100)}%`)
+  parts.push(d.total ? `${formatBytes(d.downloaded)} of ${formatBytes(d.total)}` : formatBytes(d.downloaded))
+  if (d.speedBps) parts.push(`${formatBytes(d.speedBps)}/s`)
+  if (d.etaS != null) parts.push(formatEta(d.etaS * 1000))
+  return parts.join(' · ')
+})
+const barPercent = computed(() => {
+  if (downloading.value) return Math.round((tr.downloadFraction ?? 0) * 100)
+  return Math.round((pct.value != null ? (tr.overallFraction ?? 0) : tr.stageFraction) * 100)
+})
+const barIndeterminate = computed(() => (downloading.value ? tr.downloadFraction == null && tr.download?.waitLeft == null : pct.value == null && tr.stageFraction === 0))
+const resultHost = computed(() => (tr.source?.url ? hostOf(tr.source.url) : null))
+const downloadError = computed(() => !!tr.error && (tr.error.code.startsWith('download_') || tr.error.code === 'invalid_url'))
+const canFixInSettings = computed(() => tr.error?.code === 'download_login' || tr.error?.code === 'download_failed' || tr.error?.code === 'download_disabled')
 const stageIndex = computed(() => visibleStages.value.indexOf(tr.currentStage))
 const subtitle = computed(() => {
   const parts: string[] = []
+  if (tr.download?.durationS) parts.push(formatDurationWords(tr.download.durationS))
   if (tr.progress) parts.push(`${formatDurationWords(tr.progress.totalS)} of audio`)
   if (tr.detectedLanguage) parts.push(languageName(tr.detectedLanguage.code))
   return parts.join(' · ')
 })
 const pct = computed(() => (tr.overallFraction == null ? null : Math.round(tr.overallFraction * 100)))
+
 
 const micHint = computed(() => {
   switch (rec.permission) {
@@ -41,6 +70,13 @@ const micHint = computed(() => {
   }
 })
 
+async function submitUrl() {
+  await tr.transcribeUrl()
+}
+function openDownloadSettings() {
+  app.settingsSection = 'downloads'
+  app.settingsOpen = true
+}
 async function chooseFile() {
   const p = await backend().pickFile('media')
   if (p) await tr.transcribeFile(p)
@@ -64,6 +100,7 @@ const audioItems = [
   { id: 'm4a', label: 'M4A (AAC)' },
   { id: 'mp3', label: 'MP3' },
 ]
+const downloadAudioItems = [{ id: 'original', label: 'As downloaded' }, ...audioItems]
 defineExpose({ chooseFile })
 </script>
 
@@ -92,6 +129,32 @@ defineExpose({ chooseFile })
           <p class="muted small">Drop an audio or video file here</p>
           <button type="button" class="btn btn-primary" data-testid="choose-file" @click="chooseFile">Choose file…</button>
           <p class="muted tiny">MP3 · M4A · WAV · FLAC · OGG/Opus · AAC · AIFF · MP4 · MOV · MKV · WebM</p>
+        </div>
+        <div v-if="linksAllowed" class="card pad choice link" data-testid="url-card">
+          <div class="drop-icon"><Icon name="link" :size="30" /></div>
+          <h2>Transcribe a link</h2>
+          <p class="muted small">YouTube, a podcast episode or an audio file</p>
+          <form class="url-form" novalidate @submit.prevent="submitUrl">
+            <input
+              v-model="tr.urlDraft"
+              class="url-input"
+              type="text"
+              inputmode="url"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+              placeholder="https://…"
+              aria-label="Link to an audio or video page"
+              :aria-invalid="tr.urlError ? 'true' : 'false'"
+              aria-describedby="url-hint"
+              data-testid="url-input"
+              @blur="tr.urlTouched = tr.urlDraft.trim().length > 0"
+              @input="tr.urlTouched = false"
+            />
+            <button type="submit" class="btn btn-primary" data-testid="url-submit">Transcribe</button>
+          </form>
+          <p v-if="tr.urlError" class="inline-warn" role="alert" data-testid="url-error"><Icon name="warn" :size="16" /> {{ tr.urlError }}</p>
+          <p id="url-hint" class="muted tiny">Only the audio is downloaded, and only when you start it. Nothing is uploaded. <span class="kbd">⌘V</span> works too.</p>
         </div>
       </div>
       <div class="lang-row">
@@ -140,13 +203,21 @@ defineExpose({ chooseFile })
         <li v-for="(s, i) in visibleStages" :key="s" :class="{ done: i < stageIndex, current: i === stageIndex }" :data-stage="s">
           <span class="mark"><Icon v-if="i < stageIndex" name="check" :size="12" /></span>
           {{ STAGE_LABEL[s] }}<template v-if="i === stageIndex && s === 'transcribing' && pct != null"> · {{ pct }}%</template>
+          <template v-if="i === stageIndex && s === 'downloading' && tr.downloadFraction != null"> · {{ Math.round(tr.downloadFraction * 100) }}%</template>
         </li>
       </ol>
       <div class="bar-row">
-        <div class="bar" role="progressbar" :aria-valuenow="pct ?? undefined" aria-valuemin="0" aria-valuemax="100" :aria-label="STAGE_LABEL[tr.currentStage]" :class="{ indeterminate: pct == null && tr.stageFraction === 0 }">
-          <div class="fill" :style="{ width: `${Math.round((pct != null ? (tr.overallFraction ?? 0) : tr.stageFraction) * 100)}%` }" />
+        <div class="bar" role="progressbar" :aria-valuenow="downloading ? (tr.downloadFraction == null ? undefined : barPercent) : (pct ?? undefined)" aria-valuemin="0" aria-valuemax="100" :aria-label="STAGE_LABEL[tr.currentStage]" :class="{ indeterminate: barIndeterminate }">
+          <div class="fill" :style="{ width: `${barPercent}%` }" />
         </div>
-        <span class="muted small tabular eta" data-testid="eta">{{ pct != null ? `${pct}% · ${formatEta(tr.progress?.etaMs)}` : tr.currentStage === 'loading_model' ? 'Loading speech model…' : '' }}</span>
+        <span class="muted small tabular eta" :class="{ wide: downloading }" data-testid="eta" :aria-live="downloading ? 'polite' : 'off'">{{
+          downloading ? downloadStatus : pct != null ? `${pct}% · ${formatEta(tr.progress?.etaMs)}` : tr.currentStage === 'loading_model' ? 'Loading speech model…' : ''
+        }}</span>
+      </div>
+      <div v-if="downloading" class="dl-notes" aria-live="polite">
+        <p v-if="tr.download?.waitLeft != null" class="muted small" data-testid="download-waiting">Pausing a few seconds before downloading, to be gentle on the site (Settings → Downloads).</p>
+        <p v-if="tr.download?.fallback" class="banner-note" role="status" data-testid="download-fallback"><Icon name="info" :size="14" /> {{ tr.download.fallback }}</p>
+        <p v-if="tr.download?.playlist" class="banner-note" role="status" data-testid="download-playlist"><Icon name="info" :size="14" /> This link is a playlist. Only its first item is transcribed.</p>
       </div>
       <div v-if="tr.paragraphs.length" class="partial selectable" aria-label="Transcript so far" data-testid="partial">
         <p v-for="p in tr.paragraphs" :key="p.index">{{ p.text }}</p>
@@ -162,6 +233,7 @@ defineExpose({ chooseFile })
             <span>{{ formatDurationWords(tr.transcript.duration_s) }}</span>
             <span class="sep">·</span>
             <span data-testid="word-count">{{ tr.words.toLocaleString() }} words</span>
+            <template v-if="resultHost"><span class="sep">·</span><span data-testid="source-host" :title="tr.source?.url ?? ''">{{ resultHost }}</span></template>
             <span class="sep">·</span>
             <button type="button" class="chip chip-accent lang-chip" title="Change language and transcribe again" data-testid="language-badge" @click="showLang = !showLang">
               {{ languageName(tr.transcript.language) }} <Icon name="chevron" :size="12" />
@@ -173,6 +245,7 @@ defineExpose({ chooseFile })
           <button type="button" class="btn" data-testid="copy-button" @click="tr.copy()"><Icon name="copy" :size="16" /> Copy</button>
           <MenuButton label="Export" :items="exportItems" icon="download" testid="export-button" :signal="app.exportSignal" @select="(id) => tr.exportAs(id as 'txt' | 'md')" />
           <MenuButton v-if="tr.source?.recordingId" label="Save audio" :items="audioItems" testid="save-audio-button" @select="(id) => tr.saveAudio(id as 'wav' | 'm4a' | 'mp3')" />
+          <MenuButton v-else-if="tr.source?.downloadId" label="Save audio" :items="downloadAudioItems" testid="save-audio-button" @select="(id) => tr.saveAudio(id as 'original' | 'wav' | 'm4a' | 'mp3')" />
           <button type="button" class="btn btn-primary" data-testid="new-button" @click="tr.startNew()"><Icon name="plus" :size="16" /> New</button>
         </div>
       </header>
@@ -186,9 +259,11 @@ defineExpose({ chooseFile })
         <div class="err-icon"><Icon name="warn" :size="26" /></div>
         <h2>That didn’t work</h2>
         <p class="selectable">{{ tr.error.message }}</p>
-        <p v-if="tr.source" class="muted small">Your file “{{ tr.source.name }}” hasn’t been changed.</p>
+        <p v-if="downloadError && tr.source?.url" class="muted small selectable" data-testid="error-link">Nothing was saved. The link is still filled in: {{ tr.source.url }}</p>
+        <p v-else-if="tr.source" class="muted small">Your file “{{ tr.source.name }}” hasn’t been changed.</p>
         <div class="err-actions">
           <button type="button" class="btn btn-primary" data-testid="retry-button" @click="tr.retry()"><Icon name="refresh" :size="16" /> Retry</button>
+          <button v-if="canFixInSettings" type="button" class="btn" data-testid="open-download-settings" @click="openDownloadSettings">Downloads settings</button>
           <button type="button" class="btn" @click="tr.detailsOpen = !tr.detailsOpen">{{ tr.detailsOpen ? 'Hide details' : 'Show details' }}</button>
           <button type="button" class="btn btn-ghost" @click="tr.startNew()">Start over</button>
         </div>
@@ -209,7 +284,16 @@ h2 { font-size: 15px; font-weight: 600; }
 
 /* empty */
 .empty { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: var(--s5); min-height: 0; }
-.cards { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s5); }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); grid-auto-flow: column; gap: var(--s4); }
+.link { gap: var(--s2); }
+.url-form { display: flex; flex-direction: column; gap: var(--s2); width: 100%; margin-top: var(--s2); }
+.url-input { min-height: 32px; width: 100%; padding: 0 12px; border-radius: var(--r-sm); border: 1px solid var(--border-strong); background: var(--surface); text-align: left; }
+.url-input[aria-invalid='true'] { border-color: var(--danger); }
+.url-input:focus-visible { outline: 2px solid var(--focus); outline-offset: 0; }
+.dl-notes { display: flex; flex-direction: column; gap: var(--s2); }
+.banner-note { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: var(--r-sm); background: var(--accent-soft); font-size: 12px; }
+.banner-note > svg { color: var(--accent); flex: none; }
+.eta.wide { min-width: 240px; }
 .choice { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: var(--s2); min-height: 280px; }
 .mic-btn {
   width: 84px; height: 84px; border-radius: 50%; border: 0; background: var(--accent); color: var(--on-accent);

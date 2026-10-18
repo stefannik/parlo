@@ -845,7 +845,7 @@ mod tests {
                 .unwrap()
                 .live
         );
-        assert!(parse_probe(r#"{"live_status":"was_live"}"#).unwrap().live == false);
+        assert!(!parse_probe(r#"{"live_status":"was_live"}"#).unwrap().live);
         // video only
         assert!(
             !parse_probe(r#"{"formats":[{"acodec":"none"},{"acodec":"none"}]}"#)

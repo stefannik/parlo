@@ -2,6 +2,7 @@
 import { backend } from '../backend'
 import type { Unlisten } from '../backend/types'
 import { classifyPath, baseName } from './format'
+import { linkFromDrop, parseHttpUrl } from './url'
 import { useAppStore } from '../stores/app'
 import { useRecorderStore } from '../stores/recorder'
 import { useSpeakStore } from '../stores/speak'
@@ -20,6 +21,22 @@ export async function hydrate() {
   const ws = await backend().workspaceGet()
   if (ws.transcript) tr.restore(ws.transcript)
   if (ws.tts) sp.restore(ws.tts)
+  // a download that was interrupted (quit / crash / failure): the link is still in the field, retrying is one click
+  if (ws.pending_url && !ws.transcript) tr.urlDraft = ws.pending_url
+}
+
+/** Start "Transcribe from URL" for a link that was pasted or dropped on the empty Transcribe screen. */
+export async function handleLink(link: string): Promise<boolean> {
+  const app = useAppStore()
+  const rec = useRecorderStore()
+  const tr = useTranscribeStore()
+  const url = parseHttpUrl(link)
+  if (!url) return false
+  if (app.settings && !app.settings.allow_downloads) return false
+  if (rec.active || tr.phase !== 'empty') return false
+  app.tab = 'transcribe'
+  tr.urlDraft = url
+  return tr.transcribeUrl(url)
 }
 
 export type Action = 'settings' | 'quit' | 'open' | 'record' | 'pause' | 'export' | 'copy_transcript' | 'tab_transcribe' | 'tab_speak' | 'generate'
@@ -153,6 +170,38 @@ export async function registerInteractions(): Promise<() => void> {
       }
     }
   }
+  // ⌘V of a link on the empty Transcribe screen (not while typing in a field) starts the download
+  const onPaste = (e: ClipboardEvent) => {
+    if (app.tab !== 'transcribe' || app.confirm || app.settingsOpen) return
+    const t = e.target as HTMLElement | null
+    if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.isContentEditable)) return
+    const url = parseHttpUrl(e.clipboardData?.getData('text/plain') ?? '')
+    if (url && useTranscribeStore().phase === 'empty' && app.settings?.allow_downloads !== false) {
+      e.preventDefault()
+      void handleLink(url)
+    }
+  }
+  // dragging a link out of a browser's address bar or page onto the window does the same
+  const hasLink = (e: DragEvent) => {
+    const types = Array.from(e.dataTransfer?.types ?? [])
+    return !types.includes('Files') && (types.includes('text/uri-list') || types.includes('text/plain'))
+  }
+  const canTakeLink = () => app.tab === 'transcribe' && !app.confirm && !app.settingsOpen && useTranscribeStore().phase === 'empty' && app.settings?.allow_downloads !== false
+  const onDragOver = (e: DragEvent) => {
+    if (hasLink(e) && canTakeLink()) {
+      e.preventDefault()
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+    }
+  }
+  const onDrop = (e: DragEvent) => {
+    if (!hasLink(e) || !canTakeLink()) return
+    const link = linkFromDrop(e.dataTransfer?.getData('text/uri-list') ?? '', e.dataTransfer?.getData('text/plain') ?? '')
+    if (link) {
+      e.preventDefault()
+      app.dropHover = false
+      void handleLink(link)
+    }
+  }
   const onVisibility = () => {
     void b.setVisible(document.visibilityState === 'visible')
     if (document.visibilityState === 'visible' && !rec.active) void rec.refreshDevices()
@@ -163,12 +212,18 @@ export async function registerInteractions(): Promise<() => void> {
   }
   window.addEventListener('focus', onFocus)
   window.addEventListener('keydown', onKey)
+  document.addEventListener('paste', onPaste)
+  document.addEventListener('dragover', onDragOver)
+  document.addEventListener('drop', onDrop)
   document.addEventListener('visibilitychange', onVisibility)
   void b.setVisible(document.visibilityState === 'visible')
 
   return () => {
     off.forEach((f) => f())
     window.removeEventListener('keydown', onKey)
+    document.removeEventListener('paste', onPaste)
+    document.removeEventListener('dragover', onDragOver)
+    document.removeEventListener('drop', onDrop)
     document.removeEventListener('visibilitychange', onVisibility)
     window.removeEventListener('focus', onFocus)
   }

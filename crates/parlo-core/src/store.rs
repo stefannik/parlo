@@ -80,6 +80,20 @@ pub struct Settings {
     pub default_speed: f32,
     /// "standard" | "fast"
     pub tts_quality: String,
+    // --- Downloads ("Transcribe from URL", DECISIONS C-021). The only network use in Parlo, and only when the user starts it.
+    /// master switch: off hides the URL card and makes the download commands refuse
+    pub allow_downloads: bool,
+    /// override for the system yt-dlp (file or directory); `None` = search /opt/homebrew/bin, /usr/local/bin, ~/.local/bin
+    pub downloader_path: Option<String>,
+    /// let yt-dlp read the signed-in cookies of `cookies_browser` (private / age-restricted videos); read locally, sent
+    /// only to the site being downloaded from
+    pub use_browser_cookies: bool,
+    /// yt-dlp browser name (chrome, firefox, safari, …)
+    pub cookies_browser: Option<String>,
+    /// `--impersonate chrome` when the downloader supports it
+    pub impersonate: bool,
+    /// `--sleep-interval 5 --max-sleep-interval 15` (be polite to the site)
+    pub rate_limit_sleep: bool,
 }
 
 impl Default for Settings {
@@ -95,6 +109,12 @@ impl Default for Settings {
             default_voice: "george".into(),
             default_speed: 1.0,
             tts_quality: "standard".into(),
+            allow_downloads: true,
+            downloader_path: None,
+            use_browser_cookies: false,
+            cookies_browser: None,
+            impersonate: true,
+            rate_limit_sleep: true,
         }
     }
 }
@@ -104,6 +124,18 @@ impl Settings {
         match &self.input_device {
             Some(d) => DeviceSelector::Named(d.clone()),
             None => DeviceSelector::SystemDefault,
+        }
+    }
+
+    /// The download knobs for [`crate::download`]. Cookies are only passed when switched on **and** a browser is chosen.
+    pub fn download_options(&self) -> crate::download::DownloadOptions {
+        crate::download::DownloadOptions {
+            impersonate: self.impersonate,
+            cookies_browser: self
+                .use_browser_cookies
+                .then(|| self.cookies_browser.clone())
+                .flatten(),
+            rate_limit_sleep: self.rate_limit_sleep,
         }
     }
 
@@ -137,6 +169,11 @@ impl Settings {
                 "default_speed must be between 0.5 and 2.0".into(),
             ));
         }
+        if let Some(b) = &next.cookies_browser {
+            if !crate::download::discover::is_known_browser(b) {
+                return Err(Error::Other(format!("unknown browser '{b}'")));
+            }
+        }
         Ok(next)
     }
 }
@@ -147,6 +184,9 @@ impl Settings {
 pub struct Workspace {
     pub transcript: Option<WorkspaceTranscript>,
     pub tts: Option<WorkspaceTts>,
+    /// a URL whose download was started and not finished (quit/crash/failure): the URL field is refilled on launch so
+    /// retrying is one click. Cleared when the download completes or is cancelled.
+    pub pending_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -159,6 +199,11 @@ pub struct WorkspaceTranscript {
     pub edited: bool,
     pub exported_or_copied: bool,
     pub recording_id: Option<String>,
+    /// transcribed from this URL (the audio is kept in `downloads/<download_id>/` while this is the current transcript)
+    #[serde(default)]
+    pub source_url: Option<String>,
+    #[serde(default)]
+    pub download_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

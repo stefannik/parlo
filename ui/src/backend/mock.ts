@@ -4,6 +4,7 @@
 import type {
   AppInfo,
   AudioExportFormat,
+  DownloadsInfoDto,
   ImportResultDto,
   InputDeviceDto,
   MicPermission,
@@ -23,6 +24,7 @@ import type {
   WorkspaceDto,
   WorkspacePatch,
 } from '../bindings'
+import { checkUrl, fallbackTitle, hostOf } from '../lib/url'
 import { BackendError, type Backend, type BackendEvents, type FilePickKind, type Unlisten } from './types'
 
 export interface MockOptions {
@@ -36,6 +38,8 @@ export interface MockOptions {
   /** make the next transcription / generation fail (once) */
   failNextStt?: boolean
   failNextTts?: boolean
+  /** start with "Allow downloads from URLs" switched off */
+  downloadsOff?: boolean
 }
 
 /** Gate points a script can be held at (used by the screenshot tool): `window.__parloMock.hold('stt:transcribing')`. */
@@ -80,6 +84,27 @@ const SAMPLE_PARAGRAPHS = [
   "That's all I have. Let's open it up for questions.",
 ]
 
+const DOWNLOADS_OFF = 'Downloads from links are turned off. Turn them on in Settings → Downloads.'
+
+/** The URL keywords the mock reacts to (the real core classifies the downloader's own error text). */
+const DOWNLOAD_RULES: Array<[RegExp, string, string]> = [
+  [/\/live\b|livestream/i, 'download_live', 'This is a live stream, so there is nothing to transcribe yet. Try again after it has ended.'],
+  [/\/private|\/age\b|members-only/i, 'download_login', 'This video is private, members-only or age-restricted. If your browser is signed in to the site, turn on Settings → Downloads → “Use browser cookies” and try again.'],
+  [/spotify\.com|\/drm/i, 'download_drm', 'This content is protected (DRM) or comes from a site that doesn’t allow downloads (like Spotify or Netflix), so Parlo can’t read it.'],
+  [/\/notfound|\/404/i, 'download_not_found', 'That link doesn’t seem to exist any more (not found). Check the address and try again.'],
+  [/\/offline|\/network/i, 'download_network', 'Couldn’t reach the website. Check your internet connection and try again.'],
+  [/\/noaudio/i, 'download_no_audio', 'Couldn’t find an audio track at this link.'],
+  [/\/diskfull/i, 'disk_space', 'Not enough free disk space to download this audio. Free some space and try again.'],
+  [/\/unsupported|\/fail\b/i, 'download_failed', 'Couldn’t download this link. Install or update yt-dlp: `brew install yt-dlp` / `brew upgrade yt-dlp`.'],
+]
+
+/** Title the "site" reports for a link. */
+function titleFor(url: string) {
+  if (/youtube\.com|youtu\.be/.test(url)) return 'Local-first software: an interview with the authors'
+  if (/\.(mp3|m4a|aac|ogg|opus|wav)(\?|$)/i.test(url)) return fallbackTitle(url)
+  return `Episode 12 · ${hostOf(url)}`
+}
+
 const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
 export class MockBackend implements Backend {
@@ -96,6 +121,12 @@ export class MockBackend implements Backend {
     default_voice: 'george',
     default_speed: 1.0,
     tts_quality: 'standard',
+    allow_downloads: true,
+    downloader_path: null,
+    use_browser_cookies: false,
+    cookies_browser: null,
+    impersonate: true,
+    rate_limit_sleep: true,
   }
   private workspace: WorkspaceDto
   private recoverableList: RecoverableDto[]
@@ -115,7 +146,8 @@ export class MockBackend implements Backend {
     this.opts = opts
     this.mic = opts.micPermission ?? 'granted'
     this.recoverableList = opts.recoverables ? [...opts.recoverables] : []
-    this.workspace = opts.workspace ?? { transcript: null, tts: null }
+    this.workspace = opts.workspace ?? { transcript: null, tts: null, pending_url: null }
+    if (opts.downloadsOff) this.settings.allow_downloads = false
     this.control = {
       held: null,
       options: this.opts,
@@ -197,7 +229,7 @@ export class MockBackend implements Backend {
     const next: Record<string, unknown> = { ...this.settings }
     for (const [k, v] of Object.entries(patch)) {
       if (v == null) continue
-      next[k] = k === 'input_device' && v === '' ? null : v
+      next[k] = v === '' && (k === 'input_device' || k === 'downloader_path' || k === 'cookies_browser') ? null : v
     }
     this.settings = next as unknown as SettingsDto
     return { ...this.settings }
@@ -317,6 +349,14 @@ export class MockBackend implements Backend {
 
   // ------------------------------------------------------------------------------------------------------ STT
   async transcribe(req: TranscribeRequest, onEvent: (e: SttEventDto) => void) {
+    if (req.source.kind === 'url') {
+      // same order of checks as the core: switch → validation
+      if (!this.settings.allow_downloads) throw new BackendError({ code: 'download_disabled', message: DOWNLOADS_OFF, detail: null })
+      const c = checkUrl(req.source.url)
+      if (!c.url) throw new BackendError({ code: 'invalid_url', message: c.problem ?? 'Invalid link', detail: null })
+      this.workspace.pending_url = c.url
+      req = { ...req, source: { kind: 'url', url: c.url } }
+    }
     const job = this.nextJob++
     void this.runStt(job, req, onEvent)
     return job
@@ -330,9 +370,22 @@ export class MockBackend implements Backend {
     )
   }
   private async runStt(job: number, req: TranscribeRequest, onEvent: (e: SttEventDto) => void) {
-    const name = req.source.kind === 'path' ? req.source.path.split('/').pop()! : 'Recording'
+    let name = req.source.kind === 'path' ? req.source.path.split('/').pop()! : req.source.kind === 'url' ? fallbackTitle(req.source.url) : 'Recording'
     const total = 252.4
     if (req.source.kind === 'path') this.durations.set(req.source.path, total * 1000)
+    let downloaded: { id: string; path: string; url: string } | null = null
+    if (req.source.kind === 'url') {
+      const d = await this.runDownload(job, req.source.url, onEvent)
+      if (!d) return
+      name = d.title
+      downloaded = { id: d.id, path: d.path, url: req.source.url }
+      this.durations.set(d.path, total * 1000)
+    } else if (req.source.kind === 'path' && req.source.path.includes('/mock/downloads/')) {
+      // re-transcribing audio that was downloaded earlier: keep its link
+      const id = req.source.path.split('/').at(-2)!
+      downloaded = { id, path: req.source.path, url: this.workspace.transcript?.source_url ?? '' }
+      name = this.workspace.transcript?.source_name ?? name
+    }
     const stage = async (s: string, ms: number, steps = 4) => {
       onEvent({ type: 'stage', stage: s })
       if (s === 'loading_model') this.emitModels('stt', 'loading')
@@ -387,10 +440,65 @@ export class MockBackend implements Backend {
         processing_s: 6.1,
         source_name: name,
         recording_id: req.source.kind === 'recording' ? req.source.recording_id : null,
+        source_url: downloaded?.url || null,
+        download_id: downloaded?.id ?? null,
+        media_path: downloaded?.path ?? null,
       },
     })
     this.emitModels('stt', 'ready', 300_000)
   }
+  /** Scripted download stage. Resolves with the downloaded item, or `null` after sending the terminal error event. */
+  private async runDownload(job: number, url: string, onEvent: (e: SttEventDto) => void) {
+    const fail = (code: string, message: string, detail: string | null = null) => {
+      this.cancelled.delete(job)
+      if (code === 'cancelled') this.workspace.pending_url = null // like the core: an explicit cancel forgets the link
+      onEvent({ type: 'error', error: { code, message, detail } })
+      return null
+    }
+    const cancelled = () => this.cancelled.has(job)
+    onEvent({ type: 'stage', stage: 'downloading' })
+    await this.checkpoint('stt:downloading')
+    await this.sleep(350)
+    if (cancelled()) return fail('cancelled', 'Cancelled')
+    const rule = DOWNLOAD_RULES.find(([re]) => re.test(url))
+    // refusals that need only the page, not the audio
+    if (rule && ['download_live', 'download_login', 'download_drm', 'download_not_found', 'download_network', 'download_no_audio', 'download_failed'].includes(rule[1])) {
+      if (rule[1] === 'download_failed') {
+        onEvent({ type: 'downloader_fallback', from: 'bundled', to: 'system', message: 'Bundled downloader failed, retried with system yt-dlp' })
+        await this.sleep(300)
+      }
+      return fail(rule[1], rule[2], `yt-dlp: ${rule[1]} (mock)`)
+    }
+    if (/\/fallback/.test(url)) {
+      onEvent({ type: 'downloader_fallback', from: 'bundled', to: 'system', message: 'Bundled downloader failed, retried with system yt-dlp' })
+      await this.sleep(300)
+    }
+    const title = titleFor(url)
+    onEvent({ type: 'download_info', title, duration_s: 3725, playlist: /\/playlist/.test(url) })
+    if (this.settings.rate_limit_sleep) {
+      const secs = 7
+      onEvent({ type: 'download_waiting', secs })
+      await this.checkpoint('stt:waiting')
+      for (let i = 0; i < secs * 4; i++) {
+        if (cancelled()) return fail('cancelled', 'Cancelled')
+        await this.sleep(250)
+      }
+    }
+    const totalBytes = 38_400_000
+    for (let i = 1; i <= 10; i++) {
+      if (cancelled()) return fail('cancelled', 'Cancelled')
+      await this.sleep(400)
+      if (i === 4 && rule?.[1] === 'disk_space') return fail('disk_space', rule[2], 'No space left on device (mock)')
+      onEvent({ type: 'download_progress', downloaded_bytes: (totalBytes * i) / 10, total_bytes: totalBytes, speed_bps: 2_400_000, eta_s: Math.round(((10 - i) * 0.4 * 6) / 1) })
+      if (i === 5) await this.checkpoint('stt:downloading')
+    }
+    const id = `dl-${hash(url).padStart(16, '0')}`
+    const path = `/mock/downloads/${id}/audio.m4a`
+    this.workspace.pending_url = null
+    onEvent({ type: 'downloaded', download_id: id, media_path: path, title, bytes: totalBytes })
+    return { id, path, title }
+  }
+
   private finishCancel(job: number, onEvent: (e: SttEventDto) => void) {
     this.cancelled.delete(job)
     onEvent({ type: 'error', error: { code: 'cancelled', message: 'Cancelled', detail: null } })
@@ -489,6 +597,27 @@ export class MockBackend implements Backend {
   }
   async exportRecording(_id: string, format: AudioExportFormat, dest: string) {
     return ensureExt(dest, format)
+  }
+  async exportDownload(_id: string, format: AudioExportFormat | null, dest: string) {
+    return format ? ensureExt(dest, format) : dest
+  }
+  async downloadsInfo(): Promise<DownloadsInfoDto> {
+    if (!this.settings.allow_downloads) throw new BackendError({ code: 'download_disabled', message: DOWNLOADS_OFF, detail: null })
+    return {
+      tools: [
+        { kind: 'bundled', path: '/Applications/Parlo.app/Contents/Helpers/yt-dlp/yt-dlp', version: '2026.08.19', impersonate: true, error: null },
+        ...(this.settings.downloader_path === '/nonexistent'
+          ? []
+          : [{ kind: 'system', path: this.settings.downloader_path || '/opt/homebrew/bin/yt-dlp', version: '2026.10.02', impersonate: false, error: null }]),
+      ],
+      curl: '/usr/bin/curl',
+      deno: '/opt/homebrew/bin/deno',
+      browsers: [
+        { id: 'chrome', label: 'Google Chrome' },
+        { id: 'firefox', label: 'Firefox' },
+        { id: 'safari', label: 'Safari' },
+      ],
+    }
   }
 
   // ------------------------------------------------------------------------------------------------------ workspace etc.

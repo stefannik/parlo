@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
 import { backend } from '../backend'
-import type { Appearance, IdleUnload, Performance, Retention, StorageEntryDto } from '../bindings'
+import type { Appearance, DownloadsInfoDto, IdleUnload, Performance, Retention, StorageEntryDto } from '../bindings'
 import { formatBytes } from '../lib/format'
 import { LANGUAGES } from '../lib/languages'
 import { useAppStore } from '../stores/app'
@@ -19,6 +19,7 @@ const sections = [
   { id: 'general', label: 'General' },
   { id: 'recording', label: 'Recording' },
   { id: 'transcription', label: 'Transcription' },
+  { id: 'downloads', label: 'Downloads' },
   { id: 'speech', label: 'Speech' },
   { id: 'storage', label: 'Storage' },
   { id: 'about', label: 'About' },
@@ -31,14 +32,56 @@ watch(
   () => app.settingsOpen,
   async (open) => {
     if (!open) return
-    section.value = 'general'
+    const wanted = sections.find((x) => x.id === app.settingsSection)
+    app.settingsSection = null
+    section.value = wanted?.id ?? 'general'
+    if (section.value === 'downloads') void loadDownloads()
     await nextTick()
     dialog.value?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus()
     void rec.refreshDevices()
     void loadStorage()
   },
 )
-watch(section, (s) => s === 'storage' && loadStorage())
+watch(section, (s) => {
+  if (s === 'storage') void loadStorage()
+  if (s === 'downloads') void loadDownloads()
+})
+
+// --- Downloads: what would run (asks the core once when the section opens; nothing polls)
+const dl = ref<DownloadsInfoDto | null>(null)
+const dlLoading = ref(false)
+async function loadDownloads() {
+  if (!app.settings?.allow_downloads) {
+    dl.value = null
+    return
+  }
+  dlLoading.value = true
+  try {
+    dl.value = await backend().downloadsInfo()
+  } catch {
+    dl.value = null
+  } finally {
+    dlLoading.value = false
+  }
+}
+async function setAllowDownloads(e: Event) {
+  await app.updateSettings({ allow_downloads: (e.target as HTMLInputElement).checked })
+  await loadDownloads()
+}
+async function setCookies(e: Event) {
+  const on = (e.target as HTMLInputElement).checked
+  const first = dl.value?.browsers[0]?.id
+  await app.updateSettings({ use_browser_cookies: on, cookies_browser: on && !app.settings?.cookies_browser && first ? first : null })
+}
+async function setDownloaderPath(value: string) {
+  await app.updateSettings({ downloader_path: value.trim() })
+  await loadDownloads()
+}
+async function chooseDownloader() {
+  const p = await backend().pickFile('any')
+  if (p) await setDownloaderPath(p)
+}
+const toolLabel = (k: string) => (k === 'bundled' ? 'Bundled yt-dlp' : 'System yt-dlp')
 
 async function loadStorage() {
   try {
@@ -184,6 +227,63 @@ function pick<T extends string>(e: Event): T {
               </div>
             </div>
 
+            <div v-else-if="section === 'downloads'" class="group" data-testid="downloads-section">
+              <h2>Downloads</h2>
+              <label class="check">
+                <input type="checkbox" :checked="app.settings.allow_downloads" data-testid="allow-downloads" @change="setAllowDownloads" />
+                <span><strong>Allow downloads from URLs</strong><br /><span class="muted small">Parlo only goes online when you paste a link and start a download — one child process fetches the audio, nothing is ever uploaded. Off hides “Transcribe a link”.</span></span>
+              </label>
+
+              <template v-if="app.settings.allow_downloads">
+                <div class="field">
+                  <label>Downloader in use</label>
+                  <p v-if="dlLoading && !dl" class="hint">Looking…</p>
+                  <ul v-if="dl" class="tools" data-testid="downloader-list">
+                    <li v-for="(t, i) in dl.tools" :key="t.kind" :data-testid="`tool-${t.kind}`">
+                      <strong>{{ toolLabel(t.kind) }}</strong>
+                      <span class="tabular">{{ t.version ?? 'doesn’t start' }}</span>
+                      <span v-if="i === 0" class="chip chip-accent">in use</span>
+                      <span v-else class="chip">fallback</span>
+                      <span class="path mono selectable">{{ t.path }}</span>
+                      <span v-if="t.error" class="err small">{{ t.error }}</span>
+                      <span v-else-if="t.impersonate === false" class="muted small">No Chrome impersonation in this build.</span>
+                    </li>
+                    <li v-if="!dl.tools.length" class="err" data-testid="no-downloader">No yt-dlp found. Install one with <span class="mono">brew install yt-dlp</span>{{ dl.curl ? ' — plain audio-file links still work through curl.' : '.' }}</li>
+                  </ul>
+                  <p class="hint">The bundled downloader runs first; if it fails Parlo retries once with a system yt-dlp, and for a plain audio-file link falls back to <span class="mono">{{ dl?.curl ?? '/usr/bin/curl' }}</span>.</p>
+                  <p v-if="dl" class="hint" data-testid="deno-status">JavaScript runtime for YouTube: {{ dl.deno ? `deno at ${dl.deno}` : 'deno not found — if YouTube links fail, run brew install yt-dlp deno' }}</p>
+                </div>
+                <div class="field">
+                  <label for="s-dlpath">System yt-dlp location (optional)</label>
+                  <div class="inline">
+                    <input id="s-dlpath" class="text" type="text" :value="app.settings.downloader_path ?? ''" placeholder="/opt/homebrew/bin/yt-dlp" spellcheck="false" data-testid="downloader-path" @change="setDownloaderPath(($event.target as HTMLInputElement).value)" />
+                    <button type="button" class="btn" @click="chooseDownloader">Choose…</button>
+                  </div>
+                  <p v-if="app.settings.downloader_path && dl && !dl.tools.some((t) => t.kind === 'system')" class="err small" data-testid="path-missing">Nothing runnable at that path.</p>
+                  <p v-else class="hint">Empty = look in /opt/homebrew/bin, /usr/local/bin and ~/.local/bin.</p>
+                </div>
+                <div class="field">
+                  <label class="check">
+                    <input type="checkbox" :checked="app.settings.use_browser_cookies" :disabled="!dl?.browsers.length" data-testid="use-cookies" @change="setCookies" />
+                    <span><strong>Use browser cookies</strong><br /><span class="muted small">For private, members-only or age-restricted videos. Cookies are read on this Mac and sent only to the site you’re downloading from.</span></span>
+                  </label>
+                  <select v-if="app.settings.use_browser_cookies && dl?.browsers.length" :value="app.settings.cookies_browser ?? ''" aria-label="Browser to read cookies from" data-testid="cookies-browser" @change="app.updateSettings({ cookies_browser: pick($event) })">
+                    <option v-for="b in dl.browsers" :key="b.id" :value="b.id">{{ b.label }}</option>
+                  </select>
+                  <p v-if="dl && !dl.browsers.length" class="hint">No supported browser found.</p>
+                  <p v-else class="hint">Chrome-based browsers ask for your login keychain password the first time; Safari needs Full Disk Access for Parlo.</p>
+                </div>
+                <label class="check">
+                  <input type="checkbox" :checked="app.settings.impersonate" data-testid="impersonate" @change="app.updateSettings({ impersonate: ($event.target as HTMLInputElement).checked })" />
+                  <span><strong>Impersonate a browser (Chrome)</strong><br /><span class="muted small">Helps with sites that block downloaders. Skipped automatically when the downloader can’t do it.</span></span>
+                </label>
+                <label class="check">
+                  <input type="checkbox" :checked="app.settings.rate_limit_sleep" data-testid="rate-limit" @change="app.updateSettings({ rate_limit_sleep: ($event.target as HTMLInputElement).checked })" />
+                  <span><strong>Wait 5–15 s before a download</strong><br /><span class="muted small">Be polite to the site. Parlo shows “Waiting N s” while it pauses.</span></span>
+                </label>
+              </template>
+            </div>
+
             <div v-else-if="section === 'speech'" class="group">
               <h2>Speech</h2>
               <div class="field">
@@ -258,8 +358,14 @@ h2 { font-size: 17px; margin-bottom: var(--s4); }
 .field > label, legend { font-weight: 600; font-size: 13px; padding: 0; }
 .hint { color: var(--text-2); font-size: 12px; margin: 0; }
 select { appearance: none; -webkit-appearance: none; min-height: 30px; width: 260px; padding: 0 28px 0 12px; border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='m1 1 4 4 4-4' fill='none' stroke='%23888' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 10px center; }
-.radio { display: flex; gap: var(--s3); align-items: flex-start; padding: 4px 0; }
-.radio input { accent-color: var(--accent); margin-top: 3px; }
+.radio, .check { display: flex; gap: var(--s3); align-items: flex-start; padding: 4px 0; }
+.radio input, .check input { accent-color: var(--accent); margin-top: 3px; }
+.field > label.check, .check { font-weight: 400; font-size: inherit; }
+.tools { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2); }
+.tools li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--s2); padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-2); }
+.tools .path { flex-basis: 100%; font-size: 11px; color: var(--text-2); overflow-wrap: anywhere; }
+.err { color: var(--danger); }
+.text { min-height: 30px; width: 260px; padding: 0 10px; border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--surface); }
 .inline { display: flex; gap: var(--s3); align-items: center; }
 .inline input { accent-color: var(--accent); width: 200px; }
 .usage { list-style: none; margin: 0; padding: 0; width: 100%; display: flex; flex-direction: column; gap: 2px; }

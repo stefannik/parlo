@@ -113,6 +113,15 @@ pub struct SettingsDto {
     #[specta(type = specta_typescript::Number)]
     pub default_speed: f32,
     pub tts_quality: String,
+    /// "Allow downloads from URLs" (default on). Off hides the URL card and makes the download commands refuse.
+    pub allow_downloads: bool,
+    /// override for the system yt-dlp (file or directory)
+    pub downloader_path: Option<String>,
+    pub use_browser_cookies: bool,
+    /// yt-dlp browser name (`chrome`, `firefox`, `safari`, …)
+    pub cookies_browser: Option<String>,
+    pub impersonate: bool,
+    pub rate_limit_sleep: bool,
 }
 
 /// Partial update: fields that are `null` are left unchanged.
@@ -130,6 +139,14 @@ pub struct SettingsPatch {
     #[specta(type = Option<specta_typescript::Number>)]
     pub default_speed: Option<f32>,
     pub tts_quality: Option<String>,
+    pub allow_downloads: Option<bool>,
+    /// `""` = search the usual folders; any other value is the path of a yt-dlp (or a folder containing it)
+    pub downloader_path: Option<String>,
+    pub use_browser_cookies: Option<bool>,
+    /// `""` = none
+    pub cookies_browser: Option<String>,
+    pub impersonate: Option<bool>,
+    pub rate_limit_sleep: Option<bool>,
 }
 
 // ---------------------------------------------------------------------------------------------------- audio devices / mic
@@ -260,8 +277,16 @@ pub struct QuitRequestedEvent {
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SttSource {
-    Path { path: String },
-    Recording { recording_id: String },
+    Path {
+        path: String,
+    },
+    Recording {
+        recording_id: String,
+    },
+    /// download the audio of this link first (http/https), then transcribe it
+    Url {
+        url: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -286,14 +311,58 @@ pub struct TranscriptDto {
     pub processing_s: f64,
     pub source_name: String,
     pub recording_id: Option<String>,
+    /// the link this was downloaded from (URL jobs)
+    pub source_url: Option<String>,
+    /// directory id of the kept download (`dl-…`); the audio stays until this transcript is replaced or cleared
+    pub download_id: Option<String>,
+    /// the downloaded audio file (player, re-transcribe, export)
+    pub media_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SttEventDto {
-    /// `preparing` | `detecting_speech` | `detecting_language` | `loading_model` | `transcribing`
+    /// `downloading` (URL jobs only) | `preparing` | `detecting_speech` | `detecting_language` | `loading_model` | `transcribing`
     Stage {
         stage: String,
+    },
+    /// title (and length) of the link, known before the first byte arrives
+    DownloadInfo {
+        title: String,
+        #[specta(type = Option<specta_typescript::Number>)]
+        duration_s: Option<f64>,
+        /// the link was a playlist: only its first item is transcribed
+        playlist: bool,
+    },
+    /// yt-dlp's rate-limit sleep before the download starts ("Waiting N s")
+    DownloadWaiting {
+        #[specta(type = specta_typescript::Number)]
+        secs: f64,
+    },
+    DownloadProgress {
+        #[specta(type = specta_typescript::Number)]
+        downloaded_bytes: u64,
+        #[specta(type = Option<specta_typescript::Number>)]
+        total_bytes: Option<u64>,
+        #[specta(type = Option<specta_typescript::Number>)]
+        speed_bps: Option<f64>,
+        #[specta(type = Option<specta_typescript::Number>)]
+        eta_s: Option<f64>,
+    },
+    /// the first downloader failed and another one took over ("Bundled downloader failed, retried with system yt-dlp")
+    DownloaderFallback {
+        /// `bundled` | `system` | `curl`
+        from: String,
+        to: String,
+        message: String,
+    },
+    /// the audio is complete and on disk; transcription starts
+    Downloaded {
+        download_id: String,
+        media_path: String,
+        title: String,
+        #[specta(type = specta_typescript::Number)]
+        bytes: u64,
     },
     StageProgress {
         #[specta(type = specta_typescript::Number)]
@@ -437,6 +506,10 @@ pub struct WorkspaceTranscriptDto {
     pub edited: bool,
     pub exported_or_copied: bool,
     pub recording_id: Option<String>,
+    pub source_url: Option<String>,
+    pub download_id: Option<String>,
+    /// filled in by the core when the kept download still exists (ignored on update)
+    pub media_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -455,6 +528,8 @@ pub struct WorkspaceTtsDto {
 pub struct WorkspaceDto {
     pub transcript: Option<WorkspaceTranscriptDto>,
     pub tts: Option<WorkspaceTtsDto>,
+    /// an unfinished download from a previous run: refill the URL field with it
+    pub pending_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Type)]
@@ -498,4 +573,33 @@ pub struct StorageEntryDto {
     #[specta(type = specta_typescript::Number)]
     pub bytes: u64,
     pub path: String,
+}
+
+// ---------------------------------------------------------------------------------------------------- downloads
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct DownloaderToolDto {
+    /// `bundled` | `system`
+    pub kind: String,
+    pub path: String,
+    pub version: Option<String>,
+    /// can this build impersonate Chrome (`--impersonate chrome`)? `None` = unknown
+    pub impersonate: Option<bool>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct BrowserDto {
+    /// yt-dlp's name (`chrome`, `firefox`, `safari`, …)
+    pub id: String,
+    pub label: String,
+}
+
+/// What Settings → Downloads shows: the downloader(s) in use and the browsers whose cookies could be read.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct DownloadsInfoDto {
+    pub tools: Vec<DownloaderToolDto>,
+    pub curl: Option<String>,
+    /// a system deno (JavaScript runtime for YouTube), if found
+    pub deno: Option<String>,
+    pub browsers: Vec<BrowserDto>,
 }
