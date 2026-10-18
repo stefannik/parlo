@@ -20,8 +20,8 @@ Prior-art code from the owner's earlier app is in `docs/reference/ctric/` (read-
 ## Commands
 ```bash
 # --- Rust (workspace: crates/parlo-core, crates/parlo-cli; spike/* are standalone crates, excluded)
-cargo build -p parlo-cli                      # CLI (decode | info | record | recover | devices)
-cargo test --workspace                        # needs fixtures: scripts/gen-fixtures.sh (tests fail loudly if missing)
+cargo build -p parlo-cli                      # CLI (decode | info | record | recover | devices | transcribe | speak | download <url>)
+cargo test --workspace                        # needs fixtures (scripts/gen-fixtures.sh), models (fetch-models.sh) and tools (fetch-tools.sh) — tests fail loudly if missing
 cargo fmt --all --check && cargo clippy --all-targets -- -D warnings
 cargo check --target aarch64-apple-darwin -p parlo-core --no-default-features --features cpal-input   # macOS type-check from Linux (C deps — LAME, whisper.cpp — need a real macOS toolchain, so they are off)
 

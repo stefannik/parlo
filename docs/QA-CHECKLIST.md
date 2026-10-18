@@ -29,3 +29,17 @@ Cloud pre-check done with Playwright-WebKit on every state below (`docs/screensh
 
 ## Acceptance scenarios (BRIEF §14.2)
 - [ ] 1–8 as listed
+
+## Transcribe from URL (C-021)
+- [ ] Empty screen: three cards (Record / file / link); Settings → Downloads → off hides the link card and ⌘V of a link does nothing
+- [ ] Type a bad link (`youtube.com/x`, `ftp://…`): inline message, nothing starts
+- [ ] ⌘V of a YouTube link on the empty screen starts a download; pasting while typing in the field does not
+- [ ] Drag a link from a browser's address bar onto the window (see MAC_HANDOFF H11)
+- [ ] Downloading stage shows the title, "Waiting N s", then percent · bytes · speed · ETA; Cancel works in both
+- [ ] Cancel → empty screen, the link is still in the field, `downloads/` is empty
+- [ ] Quit (⌘Q) during a download, relaunch: link refilled, nothing half-written on disk
+- [ ] Live stream, private/age-restricted (cookies hint + "Downloads settings"), Spotify (DRM), 404, Wi-Fi off, disk full: each shows its own message
+- [ ] Result: host shown, player plays the kept audio, re-transcribe in another language doesn't download again, Save audio → "As downloaded" is byte-identical
+- [ ] "New" deletes the downloaded audio (Settings → Storage → Downloaded audio goes to 0 B)
+- [ ] Bundled → system yt-dlp fallback notice; wrong yt-dlp path override is flagged
+

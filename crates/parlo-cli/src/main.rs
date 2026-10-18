@@ -114,6 +114,26 @@ enum Cmd {
     Devices,
     /// Print stream info (codec, rate, channels, duration) without decoding
     Info { input: PathBuf },
+    /// Download the audio of a link exactly like "Transcribe from URL" (bundled → system yt-dlp → curl), into DIR/audio.<ext>.
+    /// The only command that touches the network — through a child process, never this one (DECISIONS C-021).
+    Download {
+        url: String,
+        /// output directory (default: a fresh temp dir)
+        #[arg(long)]
+        dir: Option<PathBuf>,
+        /// yt-dlp to use as the "system" downloader (default: /opt/homebrew/bin, /usr/local/bin, ~/.local/bin)
+        #[arg(long)]
+        yt_dlp: Option<String>,
+        /// skip the 5–15 s politeness sleep
+        #[arg(long)]
+        no_sleep: bool,
+        /// skip browser impersonation
+        #[arg(long)]
+        no_impersonate: bool,
+        /// read cookies from this browser (chrome, firefox, safari, …)
+        #[arg(long)]
+        cookies_from: Option<String>,
+    },
 }
 
 fn main() {
@@ -126,6 +146,84 @@ fn main() {
 
 fn run(cli: Cli) -> parlo_core::Result<()> {
     match cli.cmd {
+        Cmd::Download {
+            url,
+            dir,
+            yt_dlp,
+            no_sleep,
+            no_impersonate,
+            cookies_from,
+        } => {
+            use parlo_core::download::{self, DownloadEvent, DownloadOptions, DownloadRequest};
+            let dir = dir.unwrap_or_else(|| {
+                std::env::temp_dir().join(format!("parlo-dl-{}", std::process::id()))
+            });
+            let tools = download::Tools::discover(yt_dlp.as_deref());
+            eprintln!(
+                "tools: bundled={:?} system={:?} deno={:?} curl={:?}",
+                tools.bundled, tools.system, tools.deno, tools.curl
+            );
+            let req = DownloadRequest {
+                url,
+                job_dir: dir.clone(),
+                cache_dir: dir.join("cache"),
+                opts: DownloadOptions {
+                    impersonate: !no_impersonate,
+                    cookies_browser: cookies_from,
+                    rate_limit_sleep: !no_sleep,
+                },
+            };
+            let cancel = std::sync::Arc::new(AtomicBool::new(false));
+            let c2 = cancel.clone();
+            let _ = ctrlc::set_handler(move || c2.store(true, std::sync::atomic::Ordering::SeqCst));
+            let r = download::download(
+                &req,
+                &tools.fetchers(),
+                &mut |e| match e {
+                    DownloadEvent::Info {
+                        title,
+                        duration_s,
+                        playlist,
+                    } => {
+                        eprintln!(
+                            "[info] {title} ({duration_s:?} s){}",
+                            if playlist {
+                                " — playlist: first item only"
+                            } else {
+                                ""
+                            }
+                        )
+                    }
+                    DownloadEvent::Waiting { secs } => eprintln!("[waiting] {secs:.1} s"),
+                    DownloadEvent::Progress {
+                        downloaded,
+                        total,
+                        speed_bps,
+                        eta_s,
+                    } => {
+                        eprintln!("[progress] {downloaded} / {total:?} bytes, {speed_bps:?} B/s, eta {eta_s:?} s")
+                    }
+                    DownloadEvent::Fallback { from, to, reason } => {
+                        eprintln!("[fallback] {} -> {}: {reason}", from.id(), to.id())
+                    }
+                },
+                &cancel,
+            );
+            match r {
+                Ok(d) => {
+                    println!(
+                        "{}",
+                        serde_json::json!({
+                            "path": d.path, "title": d.title, "duration_s": d.duration_s, "bytes": d.bytes, "tool": d.tool.id(), "url": d.url
+                        })
+                    );
+                }
+                Err(e) => {
+                    eprintln!("[{}] {}\n{}", e.kind.code(), e.message, e.detail);
+                    return Err(e.into());
+                }
+            }
+        }
         Cmd::Decode { input, output } => {
             let cancel = AtomicBool::new(false);
             let t = std::time::Instant::now();

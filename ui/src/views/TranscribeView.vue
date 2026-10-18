@@ -46,7 +46,7 @@ const barPercent = computed(() => {
 const barIndeterminate = computed(() => (downloading.value ? tr.downloadFraction == null && tr.download?.waitLeft == null : pct.value == null && tr.stageFraction === 0))
 const resultHost = computed(() => (tr.source?.url ? hostOf(tr.source.url) : null))
 const downloadError = computed(() => !!tr.error && (tr.error.code.startsWith('download_') || tr.error.code === 'invalid_url'))
-const canFixInSettings = computed(() => tr.error?.code === 'download_login' || tr.error?.code === 'download_failed' || tr.error?.code === 'download_disabled')
+const canFixInSettings = computed(() => tr.error?.code === 'download_login' || tr.error?.code === 'download_cookies' || tr.error?.code === 'download_failed' || tr.error?.code === 'download_disabled')
 const stageIndex = computed(() => visibleStages.value.indexOf(tr.currentStage))
 const subtitle = computed(() => {
   const parts: string[] = []
@@ -368,7 +368,8 @@ h2 { font-size: 15px; font-weight: 600; }
 .error { flex: 1; display: grid; place-items: center; }
 .err-card { max-width: 520px; width: 100%; display: flex; flex-direction: column; gap: var(--s3); align-items: flex-start; }
 .err-icon { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; background: var(--danger-soft); color: var(--danger); }
-.err-actions { display: flex; gap: var(--s2); margin-top: var(--s2); }
+.err-actions { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s2); }
+.err-actions .btn { white-space: nowrap; }
 .details { width: 100%; display: flex; flex-direction: column; gap: var(--s2); align-items: flex-start; }
 .details pre { margin: 0; width: 100%; max-height: 140px; overflow: auto; padding: var(--s3); border-radius: var(--r-sm); background: var(--surface-2); white-space: pre-wrap; overflow-wrap: anywhere; }
 </style>

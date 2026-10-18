@@ -90,6 +90,7 @@ const DOWNLOADS_OFF = 'Downloads from links are turned off. Turn them on in Sett
 const DOWNLOAD_RULES: Array<[RegExp, string, string]> = [
   [/\/live\b|livestream/i, 'download_live', 'This is a live stream, so there is nothing to transcribe yet. Try again after it has ended.'],
   [/\/private|\/age\b|members-only/i, 'download_login', 'This video is private, members-only or age-restricted. If your browser is signed in to the site, turn on Settings → Downloads → “Use browser cookies” and try again.'],
+  [/\/cookies/i, 'download_cookies', 'Couldn’t read your browser’s cookies. In Settings → Downloads, check the browser under “Use browser cookies” (close it and try again, allow the Keychain prompt, or give Parlo Full Disk Access for Safari) — or turn the option off.'],
   [/spotify\.com|\/drm/i, 'download_drm', 'This content is protected (DRM) or comes from a site that doesn’t allow downloads (like Spotify or Netflix), so Parlo can’t read it.'],
   [/\/notfound|\/404/i, 'download_not_found', 'That link doesn’t seem to exist any more (not found). Check the address and try again.'],
   [/\/offline|\/network/i, 'download_network', 'Couldn’t reach the website. Check your internet connection and try again.'],
@@ -462,7 +463,7 @@ export class MockBackend implements Backend {
     if (cancelled()) return fail('cancelled', 'Cancelled')
     const rule = DOWNLOAD_RULES.find(([re]) => re.test(url))
     // refusals that need only the page, not the audio
-    if (rule && ['download_live', 'download_login', 'download_drm', 'download_not_found', 'download_network', 'download_no_audio', 'download_failed'].includes(rule[1])) {
+    if (rule && ['download_live', 'download_login', 'download_cookies', 'download_drm', 'download_not_found', 'download_network', 'download_no_audio', 'download_failed'].includes(rule[1])) {
       if (rule[1] === 'download_failed') {
         onEvent({ type: 'downloader_fallback', from: 'bundled', to: 'system', message: 'Bundled downloader failed, retried with system yt-dlp' })
         await this.sleep(300)

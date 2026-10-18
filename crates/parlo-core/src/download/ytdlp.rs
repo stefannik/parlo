@@ -80,15 +80,39 @@ pub fn capabilities(
         md.and_then(|m| m.modified().ok()),
     );
     let cached = cap_cache().lock().unwrap().get(&key).cloned();
-    let mut caps = match cached {
-        Some(c) => c,
-        None => {
-            let (r, out) = proc::run_capture(
-                proc::command(path, &[OsString::from("--version")], None),
-                cancel,
-                Duration::from_secs(30),
-            )
-            .map_err(|e| run_err(e, path))?;
+    let need_version = cached.is_none();
+    let need_imp = want_impersonate
+        && cached
+            .as_ref()
+            .is_none_or(|c| c.impersonate_chrome.is_none());
+    let version_cmd = || {
+        proc::run_capture(
+            proc::command(path, &[OsString::from("--version")], None),
+            cancel,
+            Duration::from_secs(30),
+        )
+    };
+    let imp_cmd = || {
+        let args = ["--no-config", "--list-impersonate-targets"].map(OsString::from);
+        proc::run_capture(
+            proc::command(path, &args, None),
+            cancel,
+            Duration::from_secs(30),
+        )
+    };
+    // each launch of a PyInstaller build costs 0.5–1 s: ask both questions at the same time
+    let (version_res, imp_res) = std::thread::scope(|sc| {
+        let imp = need_imp.then(|| sc.spawn(imp_cmd));
+        let ver = need_version.then(version_cmd);
+        (
+            ver,
+            imp.map(|h| h.join().expect("impersonation probe panicked")),
+        )
+    });
+    let mut caps = match (cached, version_res) {
+        (Some(c), _) => c,
+        (None, Some(res)) => {
+            let (r, out) = res.map_err(|e| run_err(e, path))?;
             if !r.status.success() {
                 return Err(DownloadError::new(
                     K::Extractor,
@@ -101,15 +125,10 @@ pub fn capabilities(
                 impersonate_chrome: None,
             }
         }
+        (None, None) => unreachable!("no cache entry means the version was asked for"),
     };
-    if want_impersonate && caps.impersonate_chrome.is_none() {
-        let args = ["--no-config", "--list-impersonate-targets"].map(OsString::from);
-        let (r, out) = proc::run_capture(
-            proc::command(path, &args, None),
-            cancel,
-            Duration::from_secs(30),
-        )
-        .map_err(|e| run_err(e, path))?;
+    if let Some(res) = imp_res {
+        let (r, out) = res.map_err(|e| run_err(e, path))?;
         // an old yt-dlp without the option exits non-zero: treat as "no impersonation"
         caps.impersonate_chrome = Some(r.status.success() && parse_impersonate_chrome(&out));
     }
@@ -361,6 +380,28 @@ pub fn classify(stderr: &str) -> DownloadError {
         "fairplay",
     ]) {
         (K::Drm, "This content is protected (DRM) or comes from a site that doesn’t allow downloads (like Spotify or Netflix), so Parlo can’t read it.")
+    } else if has(&[
+        "cookies database",
+        "binarycookies",
+        "failed to decrypt",
+        "keychain",
+        "keyring",
+        "cookies from browser",
+        "could not find firefox",
+        "unsupported browser",
+        "cookie database",
+    ]) || (low.contains("cookie")
+        && has(&[
+            "operation not permitted",
+            "permission denied",
+            "errno 1]",
+            "errno 13]",
+        ]))
+    {
+        (
+            K::Cookies,
+            "Couldn’t read your browser’s cookies. In Settings → Downloads, check the browser under “Use browser cookies” (close it and try again, allow the Keychain prompt, or give Parlo Full Disk Access for Safari) — or turn the option off.",
+        )
     } else if has(&[
         "private video",
         "this video is private",
@@ -873,6 +914,9 @@ mod tests {
             ("ERROR: [youtube] abc: Sign in to confirm your age. This video may be inappropriate for some users.", K::NeedsLogin),
             ("ERROR: [youtube] abc: Join this channel to get access to members-only content like this video", K::NeedsLogin),
             ("ERROR: [youtube] abc: Sign in to confirm you’re not a bot. Use --cookies-from-browser", K::NeedsLogin),
+            ("ERROR: could not find chrome cookies database in \"/Users/me/Library/Application Support/Google/Chrome\"", K::Cookies),
+            ("ERROR: [Errno 1] Operation not permitted: '/Users/me/Library/Containers/com.apple.Safari/Data/Library/Cookies/Cookies.binarycookies'", K::Cookies),
+            ("ERROR: Failed to decrypt cookie (AES-GCM) because the Keychain item could not be read", K::Cookies),
             ("ERROR: [DRM] The requested site is known to use DRM protection. It will NOT be supported.", K::Drm),
             ("ERROR: [youtube] abc: This video is DRM protected", K::Drm),
             ("ERROR: [youtube] abc: This live event will begin in 2 hours.", K::Live),

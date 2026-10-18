@@ -11,7 +11,7 @@ Copy this script next to a few flag files (all optional) and call it like yt-dlp
   <dir>/argv.log             every invocation's argv, one JSON list per line (written by the script)
 
 The *mode* is the first path segment of the URL: https://fake.example/<mode>/…
-  success | progress (same) | sleep (rate-limit sleep line first) | slow (progress takes ~1.5 s) | live | private | age |
+  success | progress (same) | sleep (rate-limit sleep line first) | slow (progress takes ~1.5 s) | live | private | age | cookies |
   drm | notfound | network | noaudio | playlist | extractor | diskfull | hang (download never ends; leaves a grandchild)
 """
 import json
@@ -93,6 +93,8 @@ if "-J" in argv:
         err(f"ERROR: [youtube] {vid}: Private video. Sign in if you've been granted access to this video")
     elif mode == "age":
         err(f"ERROR: [youtube] {vid}: Sign in to confirm your age. This video may be inappropriate for some users.")
+    elif mode == "cookies":
+        err("ERROR: could not find chrome cookies database in \"/Users/me/Library/Application Support/Google/Chrome\"")
     elif mode == "drm":
         err("ERROR: [DRM] The requested site is known to use DRM protection. It will NOT be supported.")
     elif mode == "notfound":

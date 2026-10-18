@@ -261,6 +261,7 @@ describe('transcribe from URL (store)', () => {
     for (const [u, code] of [
       ['https://youtube.com/live', 'download_live'],
       ['https://youtube.com/private', 'download_login'],
+      ['https://youtube.com/cookies', 'download_cookies'],
       ['https://open.spotify.com/episode/1', 'download_drm'],
       ['https://example.com/notfound', 'download_not_found'],
       ['https://example.com/offline', 'download_network'],

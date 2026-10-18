@@ -201,7 +201,8 @@ describe('app shell (mock backend)', () => {
       await tid(w, `settings-${s}`).trigger('click')
       await flushPromises()
     }
-    expect(w.text()).toContain('never connects to the internet')
+    expect(w.text()).toContain('works offline')
+    expect(w.text()).toContain('a download you start from a link')
     await tid(w, 'settings-close').trigger('click')
     await vi.waitFor(() => expect(tid(w, 'settings-sheet').exists()).toBe(false))
   })

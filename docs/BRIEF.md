@@ -214,7 +214,7 @@ Use `tauri-specta` or `ts-rs` (agent's choice, logged) so the TS types for comma
 - `recording_start({ device_id? })` → `RecordingInfo`
 - `recording_pause()` / `recording_resume()` / `recording_stop()` → `RecordingInfo` / `recording_discard(id)`
 - `recoverables_list()` → interrupted recordings and jobs
-- `transcribe_start({ source: { path } | { recording_id }, language: "auto" | iso639 }, on_event: Channel<SttEvent>)` → `JobId`
+- `transcribe_start({ source: { path } | { recording_id } | { url }, language: "auto" | iso639 }, on_event: Channel<SttEvent>)` → `JobId` (a `url` source first runs the **Downloading** stage — events `download_info`, `download_waiting`, `download_progress`, `downloader_fallback`, `downloaded` — then the unchanged pipeline; `downloads_info()` and `export_download(...)` support Settings → Downloads and "Save audio")
 - `tts_start({ text | import_id, voice, quality }, on_event: Channel<TtsEvent>)` → `JobId`
 - `job_cancel(job_id)` / `job_resume(job_id, on_event)`
 - `text_import(path)` → `{ import_id, text_preview, stats, warnings }`
@@ -338,6 +338,7 @@ Get `cpal` input working with mic permission inside the **bundled** app (permiss
 ### 7.1 Inputs
 - **Audio:** WAV, MP3, M4A/AAC, ALAC, FLAC, OGG/Vorbis, Opus (OGG and WebM), AIFF, CAF.
 - **Video (audio track):** MP4, MOV, M4V, MKV, WebM.
+- **Links ("Transcribe from URL", DECISIONS C-021/C-022):** an `http(s)` link (YouTube, a podcast enclosure `.mp3`/`.m4a`, anything yt-dlp supports) → the *audio only* is downloaded by a child process into a per-job directory (bundled yt-dlp → system yt-dlp → curl for direct audio files), then handled exactly like a file. What arrives is whatever the site serves: AAC in (fragmented) MP4, WebM/Opus, MP3 — all decode with symphonia, no ffmpeg.
 - Decoding: `symphonia` (all relevant features) first; fall back to **AVFoundation** (`AVAssetReader` via `objc2-av-foundation`) for anything symphonia can't handle. Add Opus via a libopus binding if neither covers it. **No bundled ffmpeg.** Every listed format must have a fixture and a passing test.
 - Multi-channel → downmix to mono. Any sample rate → 16 kHz using a high-quality resampler (`rubato`). Stream the work: write 16 kHz mono PCM16 to a temp file in Caches. Never hold the whole file in RAM.
 - Reject with a clear message: no audio track, zero duration, DRM-protected, unreadable.

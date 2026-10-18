@@ -16,6 +16,8 @@ pub enum DownloadErrorKind {
     NeedsLogin,
     /// DRM-protected or a site that is known not to work (Spotify, Netflix …)
     Drm,
+    /// "Use browser cookies" is on but yt-dlp couldn't read them (no profile, locked keychain, Safari without Full Disk Access)
+    Cookies,
     /// the page has no audio stream
     NoAudio,
     /// 404 / gone / video unavailable
@@ -41,6 +43,7 @@ impl DownloadErrorKind {
             DownloadErrorKind::Live => "download_live",
             DownloadErrorKind::NeedsLogin => "download_login",
             DownloadErrorKind::Drm => "download_drm",
+            DownloadErrorKind::Cookies => "download_cookies",
             DownloadErrorKind::NoAudio => "download_no_audio",
             DownloadErrorKind::NotFound => "download_not_found",
             DownloadErrorKind::Network => "download_network",

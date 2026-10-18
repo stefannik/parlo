@@ -256,6 +256,7 @@ fn every_error_class_has_its_kind_and_a_clean_job_dir() {
             "Use browser cookies",
         ),
         ("age", DownloadErrorKind::NeedsLogin, "age-restricted"),
+        ("cookies", DownloadErrorKind::Cookies, "browser’s cookies"),
         ("drm", DownloadErrorKind::Drm, "DRM"),
         (
             "notfound",

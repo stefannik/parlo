@@ -41,6 +41,10 @@ Why:
 
 GitHub, crates.io, npm, PyPI and Ubuntu apt are already in the default list.
 
+**yt-dlp ("Transcribe from URL", `scripts/fetch-tools.sh`):** the pinned release is downloaded from `github.com/yt-dlp/yt-dlp/releases/download/<version>/…`, which redirects to `release-assets.githubusercontent.com`. Both were reachable with the default list on 2026-10-18; if a session reports them blocked, add `release-assets.githubusercontent.com` (and `objects.githubusercontent.com`). The feature's tests deliberately use **local** HTTP servers (`scripts/fixture-server.py`); YouTube and other sites are not (and need not be) on the allowlist — real-site checks are in `docs/MAC_HANDOFF.md` section H.
+
+One-time WebKit setup for `scripts/screenshots`: `cd scripts/screenshots && npm ci && npx playwright install webkit && npx playwright install-deps webkit` (the last one needs root/apt; the setup script can run it).
+
 **Environment variables:**
 ```
 BASH_DEFAULT_TIMEOUT_MS=600000

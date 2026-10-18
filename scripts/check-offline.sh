@@ -81,4 +81,34 @@ else
   wait "$PID" || true
   grep -q PARLO_SELFTEST_OK "$T/selftest.out" || { echo "FAIL: app self-test did not pass"; cat "$T/selftest.out"; exit 1; }
   [[ $bad -eq 0 ]] && echo "OK: app self-test (real engines) passed; $samples lsof samples, no non-loopback sockets" || { echo "FAIL: sockets observed" >&2; exit 1; }
+
+  # "Transcribe from URL" (DECISIONS C-021) — DRAFTED, never run on a Mac (docs/MAC_HANDOFF.md H10). A real download through the
+  # app's command layer against local servers: the downloader CHILD may (and must) open sockets, Parlo's own PID must not —
+  # not even to loopback.
+  if [[ -f fixtures/generated/url/podcast_ep.mp3 ]]; then
+    srv() { local n=$1; shift; python3 -I scripts/fixture-server.py fixtures/generated/url "$@" >"$T/srv-$n.txt" 2>/dev/null & echo $!; }
+    S1=$(srv fast); S2=$(srv slow --bps 15000)
+    trap 'kill $PID $S1 $S2 2>/dev/null || true; rm -rf "$T"' EXIT
+    # `srv` echoes the pid; the port lands in $T/srv-<name>.txt
+    for _ in $(seq 1 50); do grep -q '^PORT ' "$T/srv-fast.txt" 2>/dev/null && grep -q '^PORT ' "$T/srv-slow.txt" 2>/dev/null && break; sleep 0.1; done
+    P1=$(grep '^PORT ' "$T/srv-fast.txt" | cut -d' ' -f2); P2=$(grep '^PORT ' "$T/srv-slow.txt" | cut -d' ' -f2)
+    own_bad=0; child_seen=0; samples=0
+    PARLO_HOME="$T/home-url" PARLO_SELFTEST=url PARLO_SELFTEST_URL_BASE="http://127.0.0.1:$P1" PARLO_SELFTEST_URL_SLOW="http://127.0.0.1:$P2" \
+      "$BIN" >"$T/selftest-url.out" 2>"$T/selftest-url.err" & PID=$!
+    while kill -0 "$PID" 2>/dev/null; do
+      if [[ -n "$(lsof -nP -i -a -p "$PID" 2>/dev/null | grep -Ev '^COMMAND' || true)" ]]; then own_bad=1; fi
+      for c in $(pgrep -P "$PID" 2>/dev/null); do
+        if [[ -n "$(lsof -nP -i -a -p "$c" 2>/dev/null | grep -Ev '^COMMAND' || true)" ]]; then child_seen=1; fi
+      done
+      samples=$((samples+1)); sleep 0.1
+    done
+    wait "$PID" || true
+    kill $S1 $S2 2>/dev/null || true
+    grep -q PARLO_SELFTEST_OK "$T/selftest-url.out" || { echo "FAIL: URL self-test did not pass"; cat "$T/selftest-url.out"; tail -n 20 "$T/selftest-url.err"; exit 1; }
+    [[ $own_bad -eq 0 ]] || { echo "FAIL: the Parlo process opened an inet socket during a URL job" >&2; exit 1; }
+    [[ $child_seen -eq 1 ]] || { echo "FAIL: never saw the downloader child's socket — the sampler can't be trusted ($samples samples)" >&2; exit 1; }
+    echo "OK: URL job — $samples lsof samples: Parlo's own PID opened zero sockets; only the downloader child did"
+  else
+    echo "(URL job check skipped: scripts/gen-fixtures.sh --only synth,url first)"
+  fi
 fi
