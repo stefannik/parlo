@@ -14,7 +14,8 @@ quit now *parks* the transcript; launch shows the empty Transcribe screen with a
 Closing the window or a crash behave as before. Tests: core `normal_quit_parks_the_transcript`, UI 97 (3 new); fmt, clippy,
 lint, typecheck, contrast, build clean; checked in the mock UI (`?parked=1`). Bundled app (2026-10-22): Dock → Quit parks + relaunch shows the link ✓, `kill -9`
 keeps the transcript on screen ✓, pre-C-026 workspace file loads as before ✓. Owner: quit → relaunch → link restores it ✓.
-Still unticked: window close (red X) → reopen keeps the transcript on screen (QA checklist).
+Owner: window close (red X) → reopen keeps the transcript ✓, but it flashed → fixed in C-027 (window hidden until the UI is
+ready; first visible frame is the final screen, measured frame by frame in the bundled app).
 
 # Transcribe from URL (2026-10-19) — DECISIONS C-021 … C-025, MAC_HANDOFF §H
 Paste/⌘V/drop a YouTube (or any yt-dlp site) or podcast link on the Transcribe screen → audio-only download → the existing

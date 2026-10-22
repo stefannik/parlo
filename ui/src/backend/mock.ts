@@ -645,6 +645,7 @@ export class MockBackend implements Backend {
   async setVisible(visible: boolean) {
     this.visible = visible
   }
+  async uiReady() {}
   async diagnostics() {
     return 'Parlo 0.1.0 (mock)\nplatform: mock\n--- last log lines ---\n(mock backend: no logs)'
   }

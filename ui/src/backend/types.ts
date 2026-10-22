@@ -96,6 +96,8 @@ export interface Backend {
   reveal(path: string): Promise<void>
   /** Tell the core whether the UI is visible (level-meter events only flow while recording AND visible). */
   setVisible(visible: boolean): Promise<void>
+  /** The UI has restored its state and rendered: the core shows the (hidden-at-creation) window. */
+  uiReady(): Promise<void>
   diagnostics(): Promise<string>
   quitConfirmed(): Promise<void>
 

@@ -49,6 +49,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::storage_clear,
             commands::reveal_in_finder,
             commands::ui_visibility,
+            commands::ui_ready,
             commands::diagnostics_text,
             commands::quit_confirmed,
             commands::downloads_info,
@@ -80,7 +81,9 @@ pub fn ensure_main_window(app: &AppHandle) {
         .inner_size(960.0, 700.0)
         .min_inner_size(720.0, 560.0)
         .resizable(true)
-        .center();
+        .center()
+        // shown by `ui_ready` once the UI has restored its state and rendered (no white page, no empty-screen flash)
+        .visible(false);
     #[cfg(target_os = "macos")]
     {
         b = b
@@ -88,8 +91,21 @@ pub fn ensure_main_window(app: &AppHandle) {
             .hidden_title(true);
     }
     match b.build() {
-        Ok(w) => {
-            let _ = w.set_focus();
+        Ok(_) => {
+            // safety net: a UI that fails to start must not leave Parlo without a window
+            let app = app.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(3));
+                if let Some(w) = app.get_webview_window("main") {
+                    if !w.is_visible().unwrap_or(true) {
+                        tracing::warn!(
+                            "UI did not report ready within 3 s; showing the window anyway"
+                        );
+                        let _ = w.show();
+                        let _ = w.set_focus();
+                    }
+                }
+            });
         }
         Err(e) => tracing::error!("could not create the main window: {e}"),
     }
@@ -247,12 +263,13 @@ fn spawn_level_ticker(app: AppHandle, state: Arc<AppState>) {
 /// and called the startup commands over IPC; prints `PARLO_SMOKE_OK`, waits `PARLO_SMOKE_HOLD_MS` (so a screenshot can
 /// be taken) and exits 0. Exits 1 after 90 s with the list of commands that never arrived.
 fn spawn_smoke_check(state: Arc<AppState>) {
-    const EXPECTED: [&str; 5] = [
+    const EXPECTED: [&str; 6] = [
         "app_info",
         "settings_get",
         "voices_list",
         "workspace_get",
         "ui_visibility",
+        "ui_ready",
     ];
     let _ = std::thread::Builder::new()
         .name("smoke".into())
@@ -297,7 +314,15 @@ pub fn run() {
             // a second launch just brings the existing instance forward (recreating the window if needed)
             ensure_main_window(app);
         }))
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        // size/position/maximized only: restoring VISIBLE would show the window before the UI is ready (`ui_ready`)
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::all()
+                        - tauri_plugin_window_state::StateFlags::VISIBLE,
+                )
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())

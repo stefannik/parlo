@@ -1495,6 +1495,18 @@ pub fn ui_visibility(app: AppHandle, state: S<'_>, visible: bool) {
     }
 }
 
+/// The UI has restored its state and rendered: show the main window. It is created hidden so that opening it never shows
+/// a blank (white) page or the empty screen before the restored one; `ensure_main_window` shows it anyway after a timeout.
+#[tauri::command]
+#[specta::specta]
+pub fn ui_ready(app: AppHandle, window: tauri::WebviewWindow, state: S<'_>) {
+    state.seen.lock().unwrap().insert("ui_ready");
+    let _ = window.show();
+    let _ = window.set_focus();
+    // the page reported itself hidden while the window was; it is visible now (level meter, recording reattach)
+    ui_visibility(app, state, true);
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn diagnostics_text(state: S<'_>) -> String {

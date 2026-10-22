@@ -89,6 +89,7 @@ export class RealBackend implements Backend {
 
   reveal = async (path: string) => void unwrap(await commands.revealInFinder(path))
   setVisible = (visible: boolean) => commands.uiVisibility(visible)
+  uiReady = () => commands.uiReady()
   diagnostics = () => commands.diagnosticsText()
   quitConfirmed = async () => void unwrap(await commands.quitConfirmed())
 

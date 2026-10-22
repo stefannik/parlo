@@ -39,6 +39,11 @@ export const commands = {
 	revealInFinder: (path: string) => typedError<null, IpcError>(__TAURI_INVOKE("reveal_in_finder", { path })),
 	/**  The UI tells the core whether it is visible, so the level meter only runs while recording *and* visible. */
 	uiVisibility: (visible: boolean) => __TAURI_INVOKE<void>("ui_visibility", { visible }),
+	/**
+	 *  The UI has restored its state and rendered: show the main window. It is created hidden so that opening it never shows
+	 *  a blank (white) page or the empty screen before the restored one; `ensure_main_window` shows it anyway after a timeout.
+	 */
+	uiReady: () => __TAURI_INVOKE<void>("ui_ready"),
 	diagnosticsText: () => __TAURI_INVOKE<string>("diagnostics_text"),
 	/**  Final answer to the quit confirmation (stop and save the recording, then exit). */
 	quitConfirmed: () => typedError<null, IpcError>(__TAURI_INVOKE("quit_confirmed")),
