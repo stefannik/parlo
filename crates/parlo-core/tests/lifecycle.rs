@@ -376,9 +376,44 @@ fn workspace_survives_restart() {
         }),
         tts: None,
         pending_url: Some("https://example.com/next".into()),
+        transcript_parked: false,
     };
     ws.save(&paths).unwrap();
     assert_eq!(Workspace::load(&paths), ws);
+}
+
+#[test]
+fn normal_quit_parks_the_transcript() {
+    let dir = tempfile::tempdir().unwrap();
+    let paths = AppPaths::under(dir.path());
+    let mut empty = Workspace::default();
+    assert!(!empty.park_transcript(), "nothing to park");
+    assert!(!empty.transcript_parked);
+    let mut ws = Workspace {
+        transcript: Some(WorkspaceTranscript {
+            text: "dictation".into(),
+            source_name: "Recording".into(),
+            language: Some("en".into()),
+            duration_s: 3.0,
+            words: 1,
+            edited: false,
+            exported_or_copied: true,
+            recording_id: Some("rec-1".into()),
+            source_url: None,
+            download_id: None,
+        }),
+        ..Default::default()
+    };
+    assert!(ws.park_transcript());
+    assert!(!ws.park_transcript(), "already parked: no second write");
+    ws.save(&paths).unwrap();
+    let back = Workspace::load(&paths);
+    assert!(back.transcript_parked);
+    assert_eq!(
+        back.transcript.unwrap().text,
+        "dictation",
+        "parked, not deleted"
+    );
 }
 
 #[test]
@@ -394,6 +429,10 @@ fn old_workspace_and_settings_files_still_load() {
     .unwrap();
     let ws = Workspace::load(&paths);
     assert_eq!(ws.transcript.as_ref().unwrap().text, "x");
+    assert!(
+        !ws.transcript_parked,
+        "older files show the transcript as before"
+    );
     assert!(ws.transcript.unwrap().download_id.is_none() && ws.pending_url.is_none());
     std::fs::write(
         paths.settings_file(),

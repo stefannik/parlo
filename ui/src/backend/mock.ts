@@ -147,7 +147,7 @@ export class MockBackend implements Backend {
     this.opts = opts
     this.mic = opts.micPermission ?? 'granted'
     this.recoverableList = opts.recoverables ? [...opts.recoverables] : []
-    this.workspace = opts.workspace ?? { transcript: null, tts: null, pending_url: null }
+    this.workspace = opts.workspace ?? { transcript: null, tts: null, pending_url: null, transcript_parked: false }
     if (opts.downloadsOff) this.settings.allow_downloads = false
     this.control = {
       held: null,
@@ -626,6 +626,7 @@ export class MockBackend implements Backend {
     return structuredClone(this.workspace)
   }
   async workspaceUpdate(patch: WorkspacePatch) {
+    if (patch.clear_transcript || patch.transcript) this.workspace.transcript_parked = false
     if (patch.clear_transcript) this.workspace.transcript = null
     if (patch.transcript) this.workspace.transcript = patch.transcript
     if (patch.clear_tts) this.workspace.tts = null

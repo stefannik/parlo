@@ -160,6 +160,14 @@ defineExpose({ chooseFile })
       <div class="lang-row">
         <LanguageSelect v-model="tr.language" label="Language" />
       </div>
+      <div v-if="tr.parked" class="last-row">
+        <button type="button" class="btn btn-ghost last-btn" data-testid="last-transcript" @click="tr.reopenParked()">
+          <Icon name="text" :size="14" />
+          <span class="muted">Last transcript</span>
+          <span class="last-name">{{ tr.parked.source_name }}</span>
+          <span class="muted">· {{ formatDurationWords(tr.parked.duration_s) }} · {{ tr.parked.words }} {{ tr.parked.words === 1 ? 'word' : 'words' }}</span>
+        </button>
+      </div>
     </div>
 
     <!-- 2 · recording -->
@@ -311,6 +319,12 @@ h2 { font-size: 15px; font-weight: 600; }
 .inline-warn { display: flex; align-items: center; flex-wrap: wrap; justify-content: center; gap: var(--s2); padding: 8px 12px; border-radius: var(--r-sm); background: var(--warning-soft); color: var(--text); font-size: 12px; max-width: 360px; }
 .inline-warn > svg { color: var(--warning); flex: none; }
 .lang-row { display: flex; justify-content: center; }
+.last-row { display: flex; justify-content: center; margin-top: calc(-1 * var(--s2)); }
+.last-btn { gap: 6px; max-width: min(560px, 100%); font-size: 12px; }
+.last-btn > svg { color: var(--text-2); flex: none; }
+.last-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.last-btn > span { flex: none; }
+.last-btn > .last-name { flex: 0 1 auto; }
 
 /* recording */
 .recording { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s4); }

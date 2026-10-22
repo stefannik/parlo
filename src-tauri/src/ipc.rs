@@ -530,6 +530,9 @@ pub struct WorkspaceDto {
     pub tts: Option<WorkspaceTtsDto>,
     /// an unfinished download from a previous run: refill the URL field with it
     pub pending_url: Option<String>,
+    /// the app was quit normally since `transcript` was shown: open on the empty screen and offer it as a link
+    /// (writing a transcript back with `workspace_update` un-parks it)
+    pub transcript_parked: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Type)]

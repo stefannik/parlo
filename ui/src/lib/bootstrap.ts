@@ -19,7 +19,9 @@ export async function hydrate() {
   sp.applyDefaults()
   if (app.settings) tr.language = app.settings.default_language
   const ws = await backend().workspaceGet()
-  if (ws.transcript) tr.restore(ws.transcript)
+  // after a normal quit, open ready to record; the transcript stays one click away (DECISIONS C-026)
+  if (ws.transcript && ws.transcript_parked) tr.parked = ws.transcript
+  else if (ws.transcript) tr.restore(ws.transcript)
   if (ws.tts) sp.restore(ws.tts)
   // a download that was interrupted (quit / crash / failure): the link is still in the field, retrying is one click
   if (ws.pending_url && !ws.transcript) tr.urlDraft = ws.pending_url

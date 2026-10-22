@@ -82,6 +82,8 @@ export const useTranscribeStore = defineStore('transcribe', () => {
   const jobId = ref<number | null>(null)
   const cancelling = ref(false)
   const detailsOpen = ref(false)
+  /** the transcript a normal quit set aside: the empty screen offers it as "Last transcript" until a new one replaces it */
+  const parked = ref<WorkspaceTranscriptDto | null>(null)
   // --- "Transcribe from URL"
   /** the link field's text; survives an error or cancel so retrying is one click, refilled from the workspace on launch */
   const urlDraft = ref('')
@@ -199,6 +201,7 @@ export const useTranscribeStore = defineStore('transcribe', () => {
         edited.value = false
         exportedOrCopied.value = false
         stage.value = 'result'
+        parked.value = null // the core replaced it
         jobId.value = null
         void persist()
         break
@@ -467,6 +470,15 @@ export const useTranscribeStore = defineStore('transcribe', () => {
     stage.value = 'result'
   }
 
+  /** "Last transcript" on the empty screen: show the parked transcript again (persisting it un-parks it in the core) */
+  async function reopenParked() {
+    const w = parked.value
+    if (!w || phase.value !== 'empty') return
+    parked.value = null
+    restore(w)
+    await persist()
+  }
+
   return {
     stage,
     phase,
@@ -512,6 +524,8 @@ export const useTranscribeStore = defineStore('transcribe', () => {
     startNew,
     restore,
     persist,
+    parked,
+    reopenParked,
   }
 })
 

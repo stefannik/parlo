@@ -370,9 +370,18 @@ pub fn run() {
             }
         }
         RunEvent::Exit => {
+            let state = app.state::<Arc<AppState>>();
+            // a normal quit: the next launch opens ready to record, the transcript one click away (C-026).
+            // A crash or force quit never gets here, so then the transcript comes back on screen as before.
+            {
+                let mut ws = state.workspace.lock().unwrap();
+                if ws.park_transcript() {
+                    let _ = ws.save(&state.paths);
+                }
+            }
             // ggml-metal asserts in its static destructor if a Metal-backed model is still alive at exit(),
             // aborting the process (crash report on every quit) — release the engines first.
-            app.state::<Arc<AppState>>().host.unload_all_idle();
+            state.host.unload_all_idle();
             // a downloader child runs in its own process group: don't leave it behind (its partial file is swept at launch)
             parlo_core::download::proc::kill_all_children();
         }

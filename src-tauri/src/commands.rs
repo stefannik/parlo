@@ -746,6 +746,7 @@ fn start_stt(
                             source_url: url.clone(),
                             download_id: download_id.clone(),
                         });
+                        ws.transcript_parked = false;
                         let _ = ws.save(&st2.paths);
                         // the previous transcription's downloaded audio is no longer needed
                         if let Some(old) = replaced {
@@ -1369,6 +1370,7 @@ fn ws_dto(state: &AppState, ws: &Workspace) -> WorkspaceDto {
             }),
         }),
         pending_url: ws.pending_url.clone(),
+        transcript_parked: ws.transcript.is_some() && ws.transcript_parked,
         tts: ws.tts.as_ref().map(|t| {
             let (segments, dur) = match &t.output_id {
                 Some(id) => {
@@ -1423,6 +1425,10 @@ pub fn workspace_get(app: AppHandle, state: S<'_>) -> WorkspaceDto {
 #[specta::specta]
 pub fn workspace_update(state: S<'_>, patch: WorkspacePatch) -> IpcResult<()> {
     let mut ws = state.workspace.lock().unwrap();
+    if patch.clear_transcript || patch.transcript.is_some() {
+        // the UI writes a transcript only while it shows it
+        ws.transcript_parked = false;
+    }
     if patch.clear_transcript {
         // "New" / cleared: the downloaded audio of the transcript that goes away goes with it
         if let Some(id) = ws.transcript.take().and_then(|t| t.download_id) {

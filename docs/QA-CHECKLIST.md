@@ -38,6 +38,9 @@ Cloud pre-check done with Playwright-WebKit on every state below (`docs/screensh
 - [ ] Downloading stage shows the title, "Waiting N s", then percent · bytes · speed · ETA; Cancel works in both
 - [ ] Cancel → empty screen, the link is still in the field, `downloads/` is empty
 - [ ] Quit (⌘Q) during a download, relaunch: link refilled, nothing half-written on disk
+- [ ] Transcript on screen → ⌘Q → relaunch: empty Transcribe screen, Record ready, "Last transcript" link restores it exactly; same via Dock → Quit (C-026)
+- [ ] Transcript on screen → close the window (red X) → reopen from the Dock: the transcript is still on screen (no quit, nothing parked)
+- [ ] Transcript on screen → `kill -9` → relaunch: the transcript is shown directly (a crash never parks it)
 - [ ] Live stream, private/age-restricted (cookies hint + "Downloads settings"), Spotify (DRM), 404, Wi-Fi off, disk full: each shows its own message
 - [ ] Result: host shown, player plays the kept audio, re-transcribe in another language doesn't download again, Save audio → "As downloaded" is byte-identical
 - [ ] "New" deletes the downloaded audio (Settings → Storage → Downloaded audio goes to 0 B)

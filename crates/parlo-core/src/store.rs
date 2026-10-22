@@ -187,6 +187,10 @@ pub struct Workspace {
     /// a URL whose download was started and not finished (quit/crash/failure): the URL field is refilled on launch so
     /// retrying is one click. Cleared when the download completes or is cancelled.
     pub pending_url: Option<String>,
+    /// set by a normal quit (⌘Q, Dock → Quit; not a crash): the next launch opens on the empty Transcribe screen and
+    /// offers the transcript behind a "Last transcript" link instead of showing it. Cleared when the transcript is
+    /// shown again, replaced or cleared (DECISIONS C-026).
+    pub transcript_parked: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -223,6 +227,12 @@ impl Workspace {
     }
     pub fn save(&self, paths: &AppPaths) -> Result<()> {
         atomic_write_json(&paths.workspace_file(), self)
+    }
+    /// Normal quit: park the current transcript (C-026). Returns whether anything changed.
+    pub fn park_transcript(&mut self) -> bool {
+        let park = self.transcript.is_some() && !self.transcript_parked;
+        self.transcript_parked |= park;
+        park
     }
 }
 

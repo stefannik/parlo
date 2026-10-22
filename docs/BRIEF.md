@@ -219,7 +219,7 @@ Use `tauri-specta` or `ts-rs` (agent's choice, logged) so the TS types for comma
 - `job_cancel(job_id)` / `job_resume(job_id, on_event)`
 - `text_import(path)` → `{ import_id, text_preview, stats, warnings }`
 - `export_tts({ output_id, format: "wav"|"m4a"|"mp3", dest })` / `export_transcript({ text, format: "txt"|"md", dest })` / `export_recording({ recording_id, format: "wav"|"m4a", dest })`
-- `workspace_get()` / `workspace_update(patch)` — last transcript and last TTS output survive restarts
+- `workspace_get()` / `workspace_update(patch)` — last transcript and last TTS output survive restarts. After a **normal quit** (⌘Q, Dock → Quit) the next launch opens on the empty Transcribe screen, ready to record, with the transcript one click away ("Last transcript" link) until a new one replaces it; after a crash or force quit it is shown again as before (DECISIONS C-026)
 - `voices_list()` → `[{ id, label, preview_src }]`
 - `reveal_in_finder(path)`
 

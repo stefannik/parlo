@@ -1,12 +1,19 @@
 # Parlo — STATUS
 
-_Last updated: 2026-10-19 (Transcribe from URL: built in the cloud, finished + verified on the Mac)_
+_Last updated: 2026-10-22 (after a normal quit, launch opens ready to record — C-026)_
 
 ## Needs owner
 _(nothing blocking so far. All needed domains are reachable: HF (incl. LFS/xethub), download.pytorch.org, GitHub assets, crates/npm/PyPI.)_
 
 ## Current phase
 **Cloud phases 0–5 complete, Mac session 1 nearly done (below).** Newest feature: **Transcribe from URL** (2026-10-18/19).
+
+# Launch after quit (2026-10-22) — DECISIONS C-026
+Owner feedback from daily use: after ⌘Q, the next launch should be ready to record, not show yesterday's transcript. A normal
+quit now *parks* the transcript; launch shows the empty Transcribe screen with a "Last transcript" link that restores it.
+Closing the window or a crash behave as before. Tests: core `normal_quit_parks_the_transcript`, UI 97 (3 new); fmt, clippy,
+lint, typecheck, contrast, build clean; checked in the mock UI (`?parked=1`). **Not yet checked in the bundled app** (QA
+checklist, 3 new rows: ⌘Q, Dock → Quit, window close, `kill -9`).
 
 # Transcribe from URL (2026-10-19) — DECISIONS C-021 … C-025, MAC_HANDOFF §H
 Paste/⌘V/drop a YouTube (or any yt-dlp site) or podcast link on the Transcribe screen → audio-only download → the existing

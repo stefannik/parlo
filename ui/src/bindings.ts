@@ -341,6 +341,11 @@ export type WorkspaceDto = {
 	tts: WorkspaceTtsDto | null,
 	/**  an unfinished download from a previous run: refill the URL field with it */
 	pending_url: string | null,
+	/**
+	 *  the app was quit normally since `transcript` was shown: open on the empty screen and offer it as a link
+	 *  (writing a transcript back with `workspace_update` un-parks it)
+	 */
+	transcript_parked: boolean,
 };
 
 export type WorkspacePatch = {

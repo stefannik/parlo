@@ -34,6 +34,22 @@ describe('transcribe store state machine', () => {
     await vi.waitFor(async () => expect((await backend.workspaceGet()).transcript?.source_name).toBe('talk.m4a'))
   })
 
+  it('a parked transcript stays offered after a cancelled job and goes away once a new result replaces it', async () => {
+    setup({ timeScale: 0.05 })
+    const tr = useTranscribeStore()
+    tr.parked = { text: 'old', source_name: 'old.m4a', language: 'en', duration_s: 5, words: 1, edited: false, exported_or_copied: true, recording_id: null, source_url: null, download_id: null, media_path: null }
+    await tr.transcribeFile('/a/talk.m4a')
+    await vi.waitFor(() => expect(tr.jobId).not.toBeNull())
+    await tr.cancel()
+    await finished(tr)
+    expect(tr.phase).toBe('empty')
+    expect(tr.parked?.source_name).toBe('old.m4a')
+    await tr.transcribeFile('/a/talk.m4a')
+    await finished(tr)
+    expect(tr.phase).toBe('result')
+    expect(tr.parked).toBeNull()
+  })
+
   it('error → retry → result; the source is preserved', async () => {
     const { backend } = setup({ failNextStt: true })
     const tr = useTranscribeStore()

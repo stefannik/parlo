@@ -22,8 +22,17 @@ export async function initBackend(): Promise<Backend> {
       micPermission: (params.get('mic') as never) ?? 'granted',
       // ?downloads=off starts with "Allow downloads from URLs" switched off (screenshots / manual testing)
       downloadsOff: params.get('downloads') === 'off',
-      // ?pending=<url> starts with an interrupted download remembered
-      workspace: params.get('pending') ? { transcript: null, tts: null, pending_url: params.get('pending') } : undefined,
+      // ?pending=<url> starts with an interrupted download remembered; ?parked=1 as if the app was quit with a transcript open
+      workspace: params.get('parked') === '1'
+        ? {
+            transcript: { text: 'Notes for Thursday: move the review to 3 pm and send the draft to the team before lunch.', source_name: 'Recording 20261021-093012', language: 'en', duration_s: 172, words: 18, edited: false, exported_or_copied: true, recording_id: null, source_url: null, download_id: null, media_path: null },
+            tts: null,
+            pending_url: null,
+            transcript_parked: true,
+          }
+        : params.get('pending')
+          ? { transcript: null, tts: null, pending_url: params.get('pending'), transcript_parked: false }
+          : undefined,
       // ?recover=1 starts with an interrupted recording and TTS job listed (screenshots / manual testing)
       recoverables:
         params.get('recover') === '1'

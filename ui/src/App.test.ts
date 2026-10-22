@@ -220,10 +220,33 @@ describe('app shell (mock backend)', () => {
 
   it('restores the last transcript from the workspace on launch', async () => {
     const { w } = await boot({
-      workspace: { transcript: { text: 'Welcome back.', source_name: 'yesterday.m4a', language: 'en', duration_s: 61, words: 2, edited: false, exported_or_copied: true, recording_id: null, source_url: null, download_id: null, media_path: null }, tts: null, pending_url: null },
+      workspace: { transcript: { text: 'Welcome back.', source_name: 'yesterday.m4a', language: 'en', duration_s: 61, words: 2, edited: false, exported_or_copied: true, recording_id: null, source_url: null, download_id: null, media_path: null }, tts: null, pending_url: null, transcript_parked: false },
     })
     expect(tid(w, 'transcribe-view').attributes('data-phase')).toBe('result')
     expect((tid(w, 'transcript-editor').element as HTMLTextAreaElement).value).toBe('Welcome back.')
+  })
+
+  it('after a normal quit it opens ready to record, with the last transcript one click away', async () => {
+    const last = { text: 'Yesterday’s dictation.', source_name: 'Recording 20261021-0930', language: 'en', duration_s: 172, words: 3, edited: false, exported_or_copied: true, recording_id: 'rec-1', source_url: null, download_id: null, media_path: null }
+    const { w, backend } = await boot({ workspace: { transcript: last, tts: null, pending_url: null, transcript_parked: true } })
+    expect(tid(w, 'transcribe-view').attributes('data-phase')).toBe('empty')
+    expect(tid(w, 'record-button').exists()).toBe(true)
+    const link = tid(w, 'last-transcript')
+    expect(link.text()).toContain('Recording 20261021-0930')
+    expect(link.text()).toContain('2 min 52 s · 3 words')
+    await link.trigger('click')
+    await flushPromises()
+    expect(tid(w, 'transcribe-view').attributes('data-phase')).toBe('result')
+    expect((tid(w, 'transcript-editor').element as HTMLTextAreaElement).value).toBe('Yesterday’s dictation.')
+    // shown again → un-parked, so reopening the window (not a quit) keeps showing it
+    const ws = await backend.workspaceGet()
+    expect(ws.transcript_parked).toBe(false)
+    expect(ws.transcript?.text).toBe('Yesterday’s dictation.')
+  })
+
+  it('no "Last transcript" link when nothing was parked', async () => {
+    const { w } = await boot()
+    expect(w.find('[data-testid="last-transcript"]').exists()).toBe(false)
   })
 
   it('quit request while recording shows the stop-and-save dialog', async () => {
@@ -351,7 +374,7 @@ describe('app shell (mock backend)', () => {
     })
 
     it('an interrupted download refills the link field on launch', async () => {
-      const { w } = await boot({ workspace: { transcript: null, tts: null, pending_url: 'https://example.com/half-done.mp3' } })
+      const { w } = await boot({ workspace: { transcript: null, tts: null, pending_url: 'https://example.com/half-done.mp3', transcript_parked: false } })
       expect((tid(w, 'url-input').element as HTMLInputElement).value).toBe('https://example.com/half-done.mp3')
     })
 
