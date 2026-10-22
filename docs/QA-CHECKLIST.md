@@ -42,7 +42,7 @@ Cloud pre-check done with Playwright-WebKit on every state below (`docs/screensh
 - [x] Same via Dock → Quit (quit Apple Event): app exits, `transcript_parked: true`, relaunch shows the empty screen + "Last transcript · Recording 20261022-122430 · 6 min 37 s · 987 words" (bundled app, 2026-10-22, d822eaa)
 - [x] Workspace written before C-026 (no `transcript_parked`) → launch shows the transcript as before (2026-10-22, d822eaa)
 - [x] Transcript on screen → close the window (red X) → reopen from the Dock: the transcript is still on screen (no quit, nothing parked) (owner, 2026-10-22)
-- [ ] Reopening the window / launching shows no white or empty-screen flash (C-027; frame captures of launch are clean — owner to confirm the Dock reopen by eye)
+- [x] Reopening the window / launching shows no white or empty-screen flash (C-027; launch frame captures clean; owner confirmed the Dock reopen, 2026-10-22)
 - [x] Transcript on screen → `kill -9` → relaunch: the transcript is shown directly (a crash never parks it) (bundled app, 2026-10-22, d822eaa)
 - [ ] Live stream, private/age-restricted (cookies hint + "Downloads settings"), Spotify (DRM), 404, Wi-Fi off, disk full: each shows its own message
 - [ ] Result: host shown, player plays the kept audio, re-transcribe in another language doesn't download again, Save audio → "As downloaded" is byte-identical
