@@ -38,7 +38,7 @@ Cloud pre-check done with Playwright-WebKit on every state below (`docs/screensh
 - [ ] Downloading stage shows the title, "Waiting N s", then percent · bytes · speed · ETA; Cancel works in both
 - [ ] Cancel → empty screen, the link is still in the field, `downloads/` is empty
 - [ ] Quit (⌘Q) during a download, relaunch: link refilled, nothing half-written on disk
-- [ ] Transcript on screen → ⌘Q → relaunch: empty Transcribe screen, Record ready, "Last transcript" link restores it exactly (C-026)
+- [x] Transcript on screen → quit → relaunch: empty Transcribe screen, Record ready, "Last transcript" link restores it exactly (C-026) (owner, bundled app, 2026-10-22, aeb9e9a)
 - [x] Same via Dock → Quit (quit Apple Event): app exits, `transcript_parked: true`, relaunch shows the empty screen + "Last transcript · Recording 20261022-122430 · 6 min 37 s · 987 words" (bundled app, 2026-10-22, d822eaa)
 - [x] Workspace written before C-026 (no `transcript_parked`) → launch shows the transcript as before (2026-10-22, d822eaa)
 - [ ] Transcript on screen → close the window (red X) → reopen from the Dock: the transcript is still on screen (no quit, nothing parked)
