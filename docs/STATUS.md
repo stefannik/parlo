@@ -12,8 +12,9 @@ _(nothing blocking so far. All needed domains are reachable: HF (incl. LFS/xethu
 Owner feedback from daily use: after ⌘Q, the next launch should be ready to record, not show yesterday's transcript. A normal
 quit now *parks* the transcript; launch shows the empty Transcribe screen with a "Last transcript" link that restores it.
 Closing the window or a crash behave as before. Tests: core `normal_quit_parks_the_transcript`, UI 97 (3 new); fmt, clippy,
-lint, typecheck, contrast, build clean; checked in the mock UI (`?parked=1`). **Not yet checked in the bundled app** (QA
-checklist, 3 new rows: ⌘Q, Dock → Quit, window close, `kill -9`).
+lint, typecheck, contrast, build clean; checked in the mock UI (`?parked=1`). Bundled app (2026-10-22): Dock → Quit parks + relaunch shows the link ✓, `kill -9`
+keeps the transcript on screen ✓, pre-C-026 workspace file loads as before ✓. **Owner still to tick:** ⌘Q and window close
+(can't be scripted here: no Accessibility permission for osascript, and Parlo has no AppleScript `close`).
 
 # Transcribe from URL (2026-10-19) — DECISIONS C-021 … C-025, MAC_HANDOFF §H
 Paste/⌘V/drop a YouTube (or any yt-dlp site) or podcast link on the Transcribe screen → audio-only download → the existing
