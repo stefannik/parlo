@@ -18,7 +18,6 @@ For using the app, see the [README](../README.md).
 | `crates/pocket-tts` | vendored + patched Candle port of PocketTTS (see `PATCHES.md`) |
 | `src-tauri` | the app shell: typed IPC (`tauri-specta`), window lifecycle, menu, notifications |
 | `ui` | Vue 3 + Pinia UI; runs in a browser with a mock backend (`VITE_MOCK_BACKEND=1`) |
-| `spike/` | Phase-0 evidence: TTS parity gate, STT model bench |
 
 Commands are listed in [`CLAUDE.md`](../CLAUDE.md#commands).
 

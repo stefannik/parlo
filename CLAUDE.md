@@ -7,7 +7,7 @@ Fully local macOS app: speech→text (files + long mic recordings, multilingual)
 2. `docs/BRIEF.md` — the source of truth for requirements, architecture, targets and phases.
 3. On the Mac: `docs/MAC_HANDOFF.md` — what still needs macOS to implement or verify.
 
-Prior-art code from the owner's earlier app is in `docs/reference/ctric/` (read-only knowledge). The original ctric repo is not available.
+Local-only (not in the public repo, gitignored; owner's archive: `parlo-internal-files-2026-11-11.tar.gz` in the project files): `docs/reference/ctric/` (prior-art code from the owner's earlier app, read-only knowledge), `spike/` (Phase 0 evidence and tooling), `docs/KICKOFF_PROMPT.md`, `docs/MAC_FINISH_PROMPT.md`. Scripts that use them (`scripts/tts-parity.sh`, `scripts/make-pockettts-config.py`) only work where those copies exist.
 
 ## Rules
 - Work on `main`. Commit **and push** at every meaningful checkpoint. No git worktrees, no force-push.
@@ -46,7 +46,7 @@ scripts/gen-fixtures.sh [--only synth,formats,edge,text,url,fleurs] [--long2h]  
 scripts/fetch-tools.sh [--variant onedir|onefile] [--verify-only]            # pinned yt-dlp → tools/yt-dlp (URL downloader; build/dev time only; tests, self-test and build-app.sh need it)
 python3 scripts/make-pockettts-config.py                                     # models/pockettts/english.local.yaml (local-path config)
 
-# --- Spikes (Phase 0)
+# --- Spikes (Phase 0; local-only copies, see above)
 spike/tts-parity/run_ref.sh main|long         # Python reference generation (resumable, background it)
 (cd spike/tts-rust && cargo build --release)  # Candle PocketTTS candidate
 (cd spike/stt-rust && cargo build --release)  # whisper-rs bench tool

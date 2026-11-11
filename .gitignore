@@ -26,3 +26,9 @@ spike/tts-new/hf/
 
 # build-time tools (scripts/fetch-tools.sh)
 /tools/yt-dlp/
+
+# internal material kept out of the public repo (local copies only; see CLAUDE.md)
+/spike/
+/docs/reference/
+/docs/KICKOFF_PROMPT.md
+/docs/MAC_FINISH_PROMPT.md
