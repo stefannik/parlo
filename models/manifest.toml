@@ -200,8 +200,8 @@ source = "voice-donations/Enrique_(Spanish)_enhanced.wav"
 source_revision = "323332d33f997de8394f24a193e1a76df720e01a"
 source_sha256 = "9d263d13e58b8fb14fde5f8f3609eeb7f05ae66c22ffb3debac2f90d8a3dc0de"
 dest = "spanish/embeddings/enrique.safetensors"
-size = 0
-sha256 = ""
+size = 6195000
+sha256 = "b807a369e7c2b887a572b0243121cd8d0442e8a084b5a23c3425d498b8181890"
 
 # ---------------------------------------------------------------- Whisper GGML (BRIEF §6.2) ----
 [whisper]
