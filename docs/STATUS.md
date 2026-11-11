@@ -1,12 +1,22 @@
 # Parlo — STATUS
 
-_Last updated: 2026-11-11 (European Spanish voice Enrique; Cosette and Jean dropped — C-028)_
+_Last updated: 2026-11-11 (release prep: user README, licenses, DMG layout; Enrique voice — C-028)_
 
 ## Needs owner
 _(nothing blocking so far. All needed domains are reachable: HF (incl. LFS/xethub), download.pytorch.org, GitHub assets, crates/npm/PyPI.)_
 
 ## Current phase
 **Cloud phases 0–5 complete, Mac session 1 nearly done (below).** Newest feature: **Transcribe from URL** (2026-10-18/19).
+
+# Release prep (2026-11-11)
+First public GitHub release (owner's friend will use it). Decisions: models stay **bundled** (DMG ≈ 1.3 GB, GitHub
+release asset limit 2 GiB); **no Apple Developer ID** → ad-hoc signed, README explains the Gatekeeper workaround
+("Open Anyway" / right-click Open / `xattr`). New user-facing `README.md`; developer docs moved to `docs/DEVELOPING.md`;
+`LICENSE` (MIT) and `THIRD_PARTY_LICENSES.md` added; `build-app.sh` no longer bundles `voice-sources/` or a nested second
+copy of the voice previews, and `--dmg` makes a drag-to-Applications DMG. Screenshots regenerated (Chromium headless; the
+WebKit build isn't installed in this cloud image). Next: build the DMG on the Mac, test a quarantined copy, make the repo
+public, create the release. Spanish TTS has a Latin-American accent whatever the voice (model limit; heavy engines ruled out
+by the owner).
 
 # European Spanish voice Enrique (2026-11-11) — DECISIONS C-028
 Preparing a public GitHub release. New Spanish voice **Enrique** (Spain accent, from Kyutai's CC0 voice donations) next to

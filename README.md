@@ -1,109 +1,114 @@
 # Parlo
 
-A fully local macOS app: **speech → text** (audio/video files and long microphone recordings, multilingual) and **text → speech** (19 English voices + 2 Spanish voices, Kyutai PocketTTS). Tauri v2 (Rust) + Vue 3. After the models are installed it never touches the network.
+**Speech to text and text to speech on your Mac, fully offline.**
 
-![Parlo, Transcribe tab](docs/screenshots/transcribe-result.light.png)
+Parlo transcribes recordings, audio and video files, and links, in almost any language. It also reads text and
+documents aloud in English or Spanish. Everything runs on your Mac: nothing is ever uploaded, and there is no account,
+telemetry or subscription.
 
-## Where things are
+<p align="center">
+  <img src="docs/screenshots/transcribe-result.light.png" alt="A finished transcript in Parlo" width="49%">
+  <img src="docs/screenshots/speak-result.dark.png" alt="Generated speech ready to play in Parlo" width="49%">
+</p>
+
+## Features
+
+**Transcribe**
+- Record with your microphone, for hours if needed. Recordings are saved safely while you record, so a crash or a
+  closed lid doesn't lose them.
+- Drop in an audio or video file: MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, MP4/MOV and more.
+- Paste a link (YouTube, a podcast episode, an audio file) and Parlo downloads just the audio and transcribes it.
+- The language is detected automatically, and you can change it with one click. Powered by Whisper large-v3-turbo.
+- Edit the transcript, copy it, or export it as `.txt` or `.md`.
+
+**Speak**
+- Type or paste text, or open a document: `.txt`, `.md`, `.docx`, `.pdf`, `.epub`, up to book length.
+- 19 English voices and 2 Spanish voices (Lola, Enrique), each with a preview. Powered by Kyutai PocketTTS.
+- Playback starts while the rest is still being generated. Export as WAV, M4A or MP3.
+
 | | |
 |---|---|
-| `docs/BRIEF.md` | requirements, architecture, targets, phases (source of truth) |
-| `docs/STATUS.md` | current state, measurements, what's next / needs the owner |
-| `docs/DECISIONS.md` | every meaningful decision (context · alternatives · decision · why) |
-| `docs/MAC_HANDOFF.md` | what still needs macOS (checklist with verification steps) |
-| `docs/QA-CHECKLIST.md` | manual QA (recording interruptions, UI review, acceptance scenarios) |
-| `crates/parlo-core` | audio, recorder, STT/TTS pipelines, text import, jobs, model lifecycle (portable Rust) |
-| `crates/parlo-cli` | headless access to all of it (tests, benchmarks): `decode · record · transcribe · lang · speak · bench · recover` |
-| `crates/parlo-macos` | macOS platform code (objc2): PDFKit, AVFoundation fallback decoder, AAC encoder, power/sleep/memory, mic permission |
-| `crates/pocket-tts` | vendored + patched Candle port of PocketTTS (see `PATCHES.md`) |
-| `src-tauri` | the app shell: typed IPC (`tauri-specta`), window lifecycle, menu, notifications |
-| `ui` | Vue 3 + Pinia UI; runs in a browser with a mock backend (`VITE_MOCK_BACKEND=1`) |
-| `spike/` | Phase-0 evidence: TTS parity gate, STT model bench |
+| ![Recording](docs/screenshots/transcribe-recording.light.png) | ![Transcribe a link](docs/screenshots/transcribe-url-result.light.png) |
+| ![Voice picker](docs/screenshots/speak-voice-picker.light.png) | ![Settings](docs/screenshots/settings-general.dark.png) |
 
-Commands are listed in [`CLAUDE.md`](CLAUDE.md#commands).
+## Requirements
 
-## Build from scratch (macOS 14+, Apple silicon; tested on macOS 26.4, M4 Pro)
-Only the Xcode **Command Line Tools** are needed (no full Xcode: Metal shaders compile at runtime).
-```bash
-xcode-select --install                                   # once
-brew install cmake node rust                             # rust via rustup also works; Node >= 22
-cargo install tauri-cli --locked --version '^2'          # `cargo tauri`; make sure ~/.cargo/bin is on PATH
-git clone <repo> ~/Projects/parlo && cd ~/Projects/parlo
-scripts/fetch-models.sh                                  # ~3.9 GB total, pinned + SHA-256 verified (build time only)
-scripts/fetch-tools.sh                                   # pinned yt-dlp for "Transcribe a link" (SHA-256 verified; build-app.sh runs it too)
-scripts/build-app.sh                                     # -> dist/Parlo.app (1.1 GB, arm64, min macOS 14)
-```
-`build-app.sh` fetches/verifies the models, builds the UI, runs `cargo tauri build` with `whisper-metal` (Metal STT) and
-`tts-accelerate` (Candle + Apple Accelerate TTS — faster than Candle-Metal here, see DECISIONS C-015), copies the models
-into `Contents/Resources/models/`, puts the pinned yt-dlp into `Contents/Resources/yt-dlp/` (signed with its own entitlements), and signs with the hardened runtime + microphone entitlement. Options: `--dmg`,
-`--no-metal`, `--skip-models`.
+- A Mac with **Apple silicon** (M1 or newer). Intel Macs are not supported.
+- **macOS 14 Sonoma** or newer.
+- About **1.6 GB** of free disk space. The speech models are included in the download, so Parlo works offline from the
+  first launch.
 
-### Install
-```bash
-rm -rf /Applications/Parlo.app && cp -R dist/Parlo.app /Applications/ && open /Applications/Parlo.app
-```
-Not notarized: if Gatekeeper complains on a copy from another Mac, `xattr -dr com.apple.quarantine /Applications/Parlo.app`.
+## Install
 
-## Keeping the microphone permission across rebuilds
-macOS ties the microphone permission (TCC) to the app's code signature. An ad-hoc signature (the default of `build-app.sh`
-without a certificate) changes on every build, so macOS asks again after each rebuild. Create a self-signed code-signing
-certificate once and the permission survives (verified: rebuilt and re-ran the mic test without a new prompt):
+1. Download **Parlo.dmg** from the [latest release](https://github.com/stefannik/parlo/releases/latest).
+2. Open the DMG and drag **Parlo** into **Applications**.
+3. Open Parlo from Applications. The first time, macOS will stop it (see below).
 
-1. *Keychain Access → Certificate Assistant → Create a Certificate…*
-2. Name: **Parlo Local Signing**, Identity Type: *Self Signed Root*, Certificate Type: *Code Signing*.
-3. `export PARLO_SIGN_IDENTITY="Parlo Local Signing"` before `scripts/build-app.sh` (add it to your shell profile).
+### "Apple could not verify Parlo…": opening it the first time
 
-`security find-identity -p codesigning` lists it as `CSSMERR_TP_NOT_TRUSTED`; that is normal for a self-signed
-certificate and `codesign` still uses it. The app's designated requirement is pinned to the certificate, so the identity is
-stable across builds.
+Parlo is free and open source, but it isn't signed with a paid Apple Developer ID. So the first time you open it, macOS
+shows a warning such as *"Apple could not verify 'Parlo' is free of malware"*. You only need to do this once:
 
-## Data locations
-| | |
-|---|---|
-| `~/Library/Application Support/Parlo/` | `settings.json`, `workspace.json`, `recordings/` (never auto-deleted), `outputs/` (generated speech, cleanable in Settings), `downloads/<id>/` (audio fetched from a link — kept only while it is the current transcription), `jobs/<id>/` (checkpoints) |
-| `~/Library/Caches/Parlo/` | temporary decoded audio — safe to delete |
-| `~/Library/Logs/Parlo/` | rotating local logs |
-| `Parlo.app/Contents/Resources/models/` | Whisper large-v3-turbo q8_0, Silero VAD, PocketTTS English + Spanish models with 22 voices (`models/` in a dev checkout) |
-`PARLO_HOME=<dir>` redirects all three user directories (tests, self-tests).
+1. Open Parlo and click **Done** on the warning (don't move it to the Bin).
+2. Open **System Settings → Privacy & Security** and scroll down to **Security**. You'll see *"Parlo" was blocked to
+   protect your Mac*.
+3. Click **Open Anyway**, confirm with your password or Touch ID, then click **Open**.
 
-## Transcribe a link (the one thing that goes online)
-Parlo is offline. The single exception is **Transcribe a link** on the Transcribe screen: paste a URL (YouTube, a podcast episode or an audio file link; ⌘V works on that screen, and dragging a link in works too) and Parlo downloads the *audio only*, then runs the normal file pipeline. Nothing is ever uploaded, there is no telemetry, updater or background request, and **the Parlo process itself opens no sockets** — the download is made by a child process: the bundled yt-dlp, a system yt-dlp as the automatic fallback (`brew install yt-dlp`, which also brings deno for YouTube), or `/usr/bin/curl` for a plain audio-file link. Settings → Downloads can switch the feature off entirely (default on), choose a yt-dlp, use your signed-in browser cookies for private/age-restricted videos (default off; cookies are read on this Mac and sent only to the site), and toggle browser impersonation and the 5–15 s politeness delay. Live streams, DRM sites (Spotify, Netflix …) and playlists (only the first item is used) are not supported. Details and decisions: `docs/DECISIONS.md` C-021 – C-023.
+After that, Parlo opens normally.
 
-## Tests, self-tests and benchmarks
-```bash
-scripts/gen-fixtures.sh                    # synthetic speech (say/espeak-ng), formats, edge files, URL-download shapes; add --only fleurs / --long2h
-scripts/fetch-tools.sh                     # the pinned yt-dlp the URL tests and self-test run for real (tools/yt-dlp, not committed)
-cargo test --workspace                     # portable + real-engine tests (needs models + fixtures; macOS adds parlo-macos/tests/platform.rs)
-npm --prefix ui ci && npm --prefix ui test # UI stores/contract tests
-PARLO_TEST_WHISPER=ggml-small-q8_0.bin cargo test -p parlo-core --test stt_real   # quicker (weaker model) run
-# CLI built like the app:
-cargo build --release -p parlo-cli --features parlo-core/whisper-metal,parlo-core/tts-accelerate
-target/release/parlo-cli transcribe file.mp3 --json         # prints rtf; use /usr/bin/time -l for peak RSS
-target/release/parlo-cli bench tts --repeat 5               # RTF, time to first audio, load, RSS
-scripts/tts-parity.sh                                       # Python reference vs Candle (long); spike/tts-parity/speed_bench.py = quick speed gate
-# the bundled app:
-PARLO_SELFTEST=1 dist/Parlo.app/Contents/MacOS/parlo        # command layer with the real engines (prints PARLO_SELFTEST_OK)
-scripts/measure-idle-memory.sh                              # window open / closed / after-job footprints (~3 min)
-scripts/check-offline.sh --cli target/release/parlo-cli --app dist/Parlo.app    # deny-network sandbox + lsof sampling
-scripts/mac-mic-test.sh 12                                  # real microphone in the bundled app (shows the TCC prompt once)
-scripts/mac-memory-pressure-test.sh                         # simulated memory warning unloads the engines (needs sudo)
-```
-Measured numbers (with commit and date) are in `docs/STATUS.md`.
+<details>
+<summary>On macOS 14 Sonoma, or if macOS says Parlo "is damaged"</summary>
 
-## Architecture in one page
-* **`parlo-core`** (portable Rust) owns everything: crash-safe recorder (SPSC ring → WAV writer, 2 s header sync, gap markers,
-  device follow, sleep/wake), streaming decode + resample, the STT pipeline (Silero VAD → ≤ 30 s chunks → whisper.cpp,
-  checkpoints, language vote, hallucination filters), the TTS pipeline (chunking, streaming segments, content-addressed cache,
-  resume), text import (txt/md/docx/epub/pdf), the model lifecycle (lazy load, idle unload, memory pressure) and the job manager.
-  OS differences are small traits in `platform/`.
-* **`parlo-macos`** implements those traits with objc2: PDFKit text, AVFoundation fallback decoder, AudioToolbox AAC/M4A,
-  `NSProcessInfo` power assertions (App Nap off while recording/working), sleep/wake, memory-pressure source, mic permission.
-* **`src-tauri`** is a thin Tauri v2 shell: ~33 typed commands + events (`tauri-specta` → `ui/src/bindings.ts`), the window is
-  *destroyed* on close (recordings/jobs continue in the core; Dock click recreates it), menus, notifications, single instance.
-  `main.rs` sets `MallocLargeCache=0` (C-017) so freed model memory returns to the OS; engines are released on exit (C-016).
-* **`ui`** is Vue 3 + Pinia: all state machines in stores, one `Backend` interface (real adapter over the bindings, mock for
-  browser development).
-* Inference: whisper.cpp (Metal) via `whisper-rs`; PocketTTS via the vendored Candle port (Accelerate). Offline: the only network use is a URL download you start ("Transcribe a link"); nothing is ever uploaded, and the Parlo process itself opens no sockets — a download runs in a child process (bundled yt-dlp, or curl).
+- **macOS 14:** in Finder, **right-click** (or Control-click) Parlo in Applications, choose **Open**, then click **Open**
+  again in the dialog.
+- **"Parlo is damaged and can't be opened"**: this is the same download check, not real damage. Open **Terminal** and
+  run:
+  ```bash
+  xattr -dr com.apple.quarantine /Applications/Parlo.app
+  ```
+  Then open Parlo again.
+</details>
 
-## Licenses
-Parlo: MIT. Models: Whisper (MIT), Silero VAD (MIT), Kyutai PocketTTS (code MIT; weights CC-BY-4.0 — attribution: Kyutai). LAME (LGPL) is statically linked for MP3 export: fine for personal use, flag it before any distribution. See `models/manifest.toml` and the app's About pane.
+### Microphone permission
+
+The first time you record, macOS asks whether Parlo may use the microphone. Click **Allow**. If you clicked *Don't
+Allow* by mistake, turn Parlo on in **System Settings → Privacy & Security → Microphone**.
+
+## Using Parlo
+
+- **Transcribe:** press the record button, or drop a file onto the window, or paste a link (⌘V). When it's done, edit,
+  **Copy** or **Export** the text. Click the language badge to re-transcribe in another language.
+- **Speak:** type or paste text, or drop a document onto the window. Pick a voice (▶ plays a preview), choose a speed
+  and press **Generate** (⌘↩). Use **Export** to save the audio.
+- **Settings** (gear icon): default voice, how long recordings are kept, storage cleanup, and link downloads.
+
+Your data lives in `~/Library/Application Support/Parlo/`. Recordings that haven't been transcribed are never deleted
+automatically.
+
+## Privacy
+
+Parlo works offline. The one exception is **Transcribe a link**: when you paste a link, Parlo downloads the audio from
+that site using the bundled [yt-dlp](https://github.com/yt-dlp/yt-dlp). Nothing is ever uploaded: no audio, no text, no
+analytics. You can turn link downloads off in Settings → Downloads.
+
+## Good to know
+
+- Spanish voices currently speak with a **Latin American accent**, including Enrique. The Spanish model pronounces words
+  that way regardless of the voice.
+- Transcription speed depends on your Mac. On an M4 Pro, an hour of audio takes about 2 minutes.
+- YouTube sometimes needs extra steps for private or age-restricted videos. See Settings → Downloads.
+
+## Uninstall
+
+Move **Parlo** from Applications to the Bin. To remove your data too, delete `~/Library/Application Support/Parlo`,
+`~/Library/Caches/Parlo` and `~/Library/Logs/Parlo`.
+
+## Building from source
+
+See [docs/DEVELOPING.md](docs/DEVELOPING.md).
+
+## License
+
+Parlo is released under the [MIT License](LICENSE). The bundled models, voices and tools have their own licenses, listed
+in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md). Speech synthesis uses Kyutai's PocketTTS (CC-BY-4.0) and speech
+recognition uses OpenAI's Whisper (MIT).

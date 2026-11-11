@@ -50,7 +50,10 @@ mkdir -p "$RES/models/whisper" "$RES/models/vad" "$RES/resources"
 cp "models/whisper/$WHISPER_MODEL" "$RES/models/whisper/"
 cp "models/vad/ggml-silero-v5.1.2.bin" "$RES/models/vad/"
 cp -R "models/pockettts" "$RES/models/pockettts"
-[[ -d resources/voice-previews ]] && cp -R resources/voice-previews "$RES/resources/voice-previews"
+# build-time only: the source recordings of Parlo's own voices (scripts/export-voices.py) are not needed at run time
+rm -rf "$RES/models/pockettts/voice-sources"
+# tauri.conf.json already bundles resources/voice-previews; copy only if it did not (a plain `cp -R` would nest a second copy)
+if [[ -d resources/voice-previews && ! -d "$RES/resources/voice-previews" ]]; then cp -R resources/voice-previews "$RES/resources/voice-previews"; fi
 # the bundled downloader: Contents/Resources/yt-dlp/yt-dlp (+ _internal/ for onedir) — found by parlo_core::download::discover
 mkdir -p dist/Parlo.app/Contents/Resources
 cp -R tools/yt-dlp dist/Parlo.app/Contents/Resources/yt-dlp
@@ -85,7 +88,13 @@ echo "signed with: ${PARLO_SIGN_IDENTITY:-ad-hoc (mic permission will be re-requ
 
 # 6 · optional DMG
 if [[ $DMG == 1 ]]; then
-  hdiutil create -volname Parlo -srcfolder dist/Parlo.app -ov -format UDZO dist/Parlo.dmg
+  # drag-to-install layout: the app next to a link to /Applications
+  STAGE=$(mktemp -d)
+  cp -R dist/Parlo.app "$STAGE/Parlo.app"
+  ln -s /Applications "$STAGE/Applications"
+  hdiutil create -volname Parlo -srcfolder "$STAGE" -ov -format UDZO dist/Parlo.dmg
+  rm -rf "$STAGE"
+  du -sh dist/Parlo.dmg
 fi
 du -sh dist/Parlo.app
 echo "built dist/Parlo.app"

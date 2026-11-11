@@ -1,0 +1,116 @@
+# Developing Parlo
+
+A fully local macOS app: **speech → text** (audio/video files and long microphone recordings, multilingual) and **text → speech** (19 English voices + 2 Spanish voices, Kyutai PocketTTS). Tauri v2 (Rust) + Vue 3. After the models are installed it never touches the network.
+
+For using the app, see the [README](../README.md).
+
+## Where things are
+| | |
+|---|---|
+| `docs/BRIEF.md` | requirements, architecture, targets, phases (source of truth) |
+| `docs/STATUS.md` | current state, measurements, what's next / needs the owner |
+| `docs/DECISIONS.md` | every meaningful decision (context · alternatives · decision · why) |
+| `docs/MAC_HANDOFF.md` | what still needs macOS (checklist with verification steps) |
+| `docs/QA-CHECKLIST.md` | manual QA (recording interruptions, UI review, acceptance scenarios) |
+| `crates/parlo-core` | audio, recorder, STT/TTS pipelines, text import, jobs, model lifecycle (portable Rust) |
+| `crates/parlo-cli` | headless access to all of it (tests, benchmarks): `decode · record · transcribe · lang · speak · bench · recover` |
+| `crates/parlo-macos` | macOS platform code (objc2): PDFKit, AVFoundation fallback decoder, AAC encoder, power/sleep/memory, mic permission |
+| `crates/pocket-tts` | vendored + patched Candle port of PocketTTS (see `PATCHES.md`) |
+| `src-tauri` | the app shell: typed IPC (`tauri-specta`), window lifecycle, menu, notifications |
+| `ui` | Vue 3 + Pinia UI; runs in a browser with a mock backend (`VITE_MOCK_BACKEND=1`) |
+| `spike/` | Phase-0 evidence: TTS parity gate, STT model bench |
+
+Commands are listed in [`CLAUDE.md`](../CLAUDE.md#commands).
+
+## Build from scratch (macOS 14+, Apple silicon; tested on macOS 26.4, M4 Pro)
+Only the Xcode **Command Line Tools** are needed (no full Xcode: Metal shaders compile at runtime).
+```bash
+xcode-select --install                                   # once
+brew install cmake node rust                             # rust via rustup also works; Node >= 22
+cargo install tauri-cli --locked --version '^2'          # `cargo tauri`; make sure ~/.cargo/bin is on PATH
+git clone https://github.com/stefannik/parlo ~/Projects/parlo && cd ~/Projects/parlo
+scripts/fetch-models.sh                                  # ~3.9 GB total, pinned + SHA-256 verified (build time only)
+scripts/fetch-tools.sh                                   # pinned yt-dlp for "Transcribe a link" (SHA-256 verified; build-app.sh runs it too)
+uv run --python 3.12 --with pocket-tts==3.3.0 scripts/export-voices.py   # Parlo's own voice (Enrique); needs huggingface.co/kyutai/pocket-tts terms accepted + `hf auth login`
+scripts/build-app.sh                                     # -> dist/Parlo.app (1.5 GB, arm64, min macOS 14); --dmg adds dist/Parlo.dmg
+```
+`build-app.sh` fetches/verifies the models, builds the UI, runs `cargo tauri build` with `whisper-metal` (Metal STT) and
+`tts-accelerate` (Candle + Apple Accelerate TTS — faster than Candle-Metal here, see DECISIONS C-015), copies the models
+into `Contents/Resources/models/`, puts the pinned yt-dlp into `Contents/Resources/yt-dlp/` (signed with its own entitlements), and signs with the hardened runtime + microphone entitlement. Options: `--dmg`,
+`--no-metal`, `--skip-models`.
+
+### Install
+```bash
+rm -rf /Applications/Parlo.app && cp -R dist/Parlo.app /Applications/ && open /Applications/Parlo.app
+```
+Not notarized: if Gatekeeper complains on a copy from another Mac, `xattr -dr com.apple.quarantine /Applications/Parlo.app`.
+
+## Keeping the microphone permission across rebuilds
+macOS ties the microphone permission (TCC) to the app's code signature. An ad-hoc signature (the default of `build-app.sh`
+without a certificate) changes on every build, so macOS asks again after each rebuild. Create a self-signed code-signing
+certificate once and the permission survives (verified: rebuilt and re-ran the mic test without a new prompt):
+
+1. *Keychain Access → Certificate Assistant → Create a Certificate…*
+2. Name: **Parlo Local Signing**, Identity Type: *Self Signed Root*, Certificate Type: *Code Signing*.
+3. `export PARLO_SIGN_IDENTITY="Parlo Local Signing"` before `scripts/build-app.sh` (add it to your shell profile).
+
+`security find-identity -p codesigning` lists it as `CSSMERR_TP_NOT_TRUSTED`; that is normal for a self-signed
+certificate and `codesign` still uses it. The app's designated requirement is pinned to the certificate, so the identity is
+stable across builds.
+
+## Data locations
+| | |
+|---|---|
+| `~/Library/Application Support/Parlo/` | `settings.json`, `workspace.json`, `recordings/` (never auto-deleted), `outputs/` (generated speech, cleanable in Settings), `downloads/<id>/` (audio fetched from a link — kept only while it is the current transcription), `jobs/<id>/` (checkpoints) |
+| `~/Library/Caches/Parlo/` | temporary decoded audio — safe to delete |
+| `~/Library/Logs/Parlo/` | rotating local logs |
+| `Parlo.app/Contents/Resources/models/` | Whisper large-v3-turbo q8_0, Silero VAD, PocketTTS English + Spanish models with 21 voices (`models/` in a dev checkout) |
+`PARLO_HOME=<dir>` redirects all three user directories (tests, self-tests).
+
+## Transcribe a link (the one thing that goes online)
+Parlo is offline. The single exception is **Transcribe a link** on the Transcribe screen: paste a URL (YouTube, a podcast episode or an audio file link; ⌘V works on that screen, and dragging a link in works too) and Parlo downloads the *audio only*, then runs the normal file pipeline. Nothing is ever uploaded, there is no telemetry, updater or background request, and **the Parlo process itself opens no sockets** — the download is made by a child process: the bundled yt-dlp, a system yt-dlp as the automatic fallback (`brew install yt-dlp`, which also brings deno for YouTube), or `/usr/bin/curl` for a plain audio-file link. Settings → Downloads can switch the feature off entirely (default on), choose a yt-dlp, use your signed-in browser cookies for private/age-restricted videos (default off; cookies are read on this Mac and sent only to the site), and toggle browser impersonation and the 5–15 s politeness delay. Live streams, DRM sites (Spotify, Netflix …) and playlists (only the first item is used) are not supported. Details and decisions: `docs/DECISIONS.md` C-021 – C-023.
+
+## Tests, self-tests and benchmarks
+```bash
+scripts/gen-fixtures.sh                    # synthetic speech (say/espeak-ng), formats, edge files, URL-download shapes; add --only fleurs / --long2h
+scripts/fetch-tools.sh                     # the pinned yt-dlp the URL tests and self-test run for real (tools/yt-dlp, not committed)
+cargo test --workspace                     # portable + real-engine tests (needs models + fixtures; macOS adds parlo-macos/tests/platform.rs)
+npm --prefix ui ci && npm --prefix ui test # UI stores/contract tests
+PARLO_TEST_WHISPER=ggml-small-q8_0.bin cargo test -p parlo-core --test stt_real   # quicker (weaker model) run
+# CLI built like the app:
+cargo build --release -p parlo-cli --features parlo-core/whisper-metal,parlo-core/tts-accelerate
+target/release/parlo-cli transcribe file.mp3 --json         # prints rtf; use /usr/bin/time -l for peak RSS
+target/release/parlo-cli bench tts --repeat 5               # RTF, time to first audio, load, RSS
+scripts/tts-parity.sh                                       # Python reference vs Candle (long); spike/tts-parity/speed_bench.py = quick speed gate
+# the bundled app:
+PARLO_SELFTEST=1 dist/Parlo.app/Contents/MacOS/parlo        # command layer with the real engines (prints PARLO_SELFTEST_OK)
+scripts/measure-idle-memory.sh                              # window open / closed / after-job footprints (~3 min)
+scripts/check-offline.sh --cli target/release/parlo-cli --app dist/Parlo.app    # deny-network sandbox + lsof sampling
+scripts/mac-mic-test.sh 12                                  # real microphone in the bundled app (shows the TCC prompt once)
+scripts/mac-memory-pressure-test.sh                         # simulated memory warning unloads the engines (needs sudo)
+```
+Measured numbers (with commit and date) are in `docs/STATUS.md`.
+
+## Architecture in one page
+* **`parlo-core`** (portable Rust) owns everything: crash-safe recorder (SPSC ring → WAV writer, 2 s header sync, gap markers,
+  device follow, sleep/wake), streaming decode + resample, the STT pipeline (Silero VAD → ≤ 30 s chunks → whisper.cpp,
+  checkpoints, language vote, hallucination filters), the TTS pipeline (chunking, streaming segments, content-addressed cache,
+  resume), text import (txt/md/docx/epub/pdf), the model lifecycle (lazy load, idle unload, memory pressure) and the job manager.
+  OS differences are small traits in `platform/`.
+* **`parlo-macos`** implements those traits with objc2: PDFKit text, AVFoundation fallback decoder, AudioToolbox AAC/M4A,
+  `NSProcessInfo` power assertions (App Nap off while recording/working), sleep/wake, memory-pressure source, mic permission.
+* **`src-tauri`** is a thin Tauri v2 shell: ~33 typed commands + events (`tauri-specta` → `ui/src/bindings.ts`), the window is
+  *destroyed* on close (recordings/jobs continue in the core; Dock click recreates it), menus, notifications, single instance.
+  `main.rs` sets `MallocLargeCache=0` (C-017) so freed model memory returns to the OS; engines are released on exit (C-016).
+* **`ui`** is Vue 3 + Pinia: all state machines in stores, one `Backend` interface (real adapter over the bindings, mock for
+  browser development).
+* Inference: whisper.cpp (Metal) via `whisper-rs`; PocketTTS via the vendored Candle port (Accelerate). Offline: the only network use is a URL download you start ("Transcribe a link"); nothing is ever uploaded, and the Parlo process itself opens no sockets — a download runs in a child process (bundled yt-dlp, or curl).
+
+## Licenses
+Parlo is MIT ([LICENSE](../LICENSE)). Everything bundled in the app, with its licence, is listed in [THIRD_PARTY_LICENSES.md](../THIRD_PARTY_LICENSES.md).
+
+## Releasing
+```bash
+scripts/build-app.sh --dmg        # dist/Parlo.dmg (drag-to-Applications layout)
+```
+Upload `dist/Parlo.dmg` to a GitHub release (assets can be up to 2 GiB each). The app is ad-hoc signed, not notarized: the README's install section explains how users open it.
