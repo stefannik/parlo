@@ -1,6 +1,6 @@
 # Parlo
 
-A fully local macOS app: **speech → text** (audio/video files and long microphone recordings, multilingual) and **text → speech** (21 English voices + Spanish, Kyutai PocketTTS). Tauri v2 (Rust) + Vue 3. After the models are installed it never touches the network.
+A fully local macOS app: **speech → text** (audio/video files and long microphone recordings, multilingual) and **text → speech** (19 English voices + 2 Spanish voices, Kyutai PocketTTS). Tauri v2 (Rust) + Vue 3. After the models are installed it never touches the network.
 
 ![Parlo, Transcribe tab](docs/screenshots/transcribe-result.light.png)
 

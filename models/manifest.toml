@@ -73,13 +73,6 @@ size = 6195000
 sha256 = "f6c03e29e9b17708f24ef3aaab0af92d9c11565c0997ee8c8271cacc72cfe53a"
 
 [[pockettts.file]]
-path = "languages/english_2026-09/embeddings/cosette.safetensors"
-dest = "english/embeddings/cosette.safetensors"
-revision = "575d14372df89a4534bcb989870a34e77544b09f"
-size = 6195000
-sha256 = "90f7a535c7c8774b8f5c28b841b0b93e1c55ef45e31f688021ad067fd2ac97f7"
-
-[[pockettts.file]]
 path = "languages/english_2026-09/embeddings/eponine.safetensors"
 dest = "english/embeddings/eponine.safetensors"
 revision = "575d14372df89a4534bcb989870a34e77544b09f"
@@ -120,13 +113,6 @@ dest = "english/embeddings/javert.safetensors"
 revision = "575d14372df89a4534bcb989870a34e77544b09f"
 size = 6195000
 sha256 = "580e4b72d4065e906c14e580f97da478c9707bead74b0ef9c049e0ca8de997d9"
-
-[[pockettts.file]]
-path = "languages/english_2026-09/embeddings/jean.safetensors"
-dest = "english/embeddings/jean.safetensors"
-revision = "575d14372df89a4534bcb989870a34e77544b09f"
-size = 6195000
-sha256 = "397583373a34c22781000a8d33e5cdceca30501368376605539b3e805bc8a837"
 
 [[pockettts.file]]
 path = "languages/english_2026-09/embeddings/marius.safetensors"
@@ -197,6 +183,25 @@ dest = "spanish/embeddings/lola.safetensors"
 revision = "575d14372df89a4534bcb989870a34e77544b09f"
 size = 5457720
 sha256 = "967b8f08639345ff5ad1a912a5542fe421518c3f80b87d52078c6726348ab1e7"
+
+# ---------------------------------------------------------------- Parlo's own PocketTTS voices (DECISIONS C-028) ----
+# Not downloadable: made by scripts/export-voices.py from the pinned source recording with Kyutai's gated voice-cloning
+# weights (kyutai/pocket-tts, same pocket-tts 3.3.0 language config), then verified here like any other file.
+# Sources: Kyutai's Unmute Voice Donation Project (CC0, donors consented to voice cloning), https://huggingface.co/kyutai/tts-voices
+[pockettts_voices]
+source_repo = "kyutai/tts-voices"
+license = "CC0-1.0 (recording); voice state made with CC-BY-4.0 weights"
+dest_dir = "pockettts"
+
+[[pockettts_voices.voice]]
+id = "enrique"
+language = "spanish"
+source = "voice-donations/Enrique_(Spanish)_enhanced.wav"
+source_revision = "323332d33f997de8394f24a193e1a76df720e01a"
+source_sha256 = "9d263d13e58b8fb14fde5f8f3609eeb7f05ae66c22ffb3debac2f90d8a3dc0de"
+dest = "spanish/embeddings/enrique.safetensors"
+size = 0
+sha256 = ""
 
 # ---------------------------------------------------------------- Whisper GGML (BRIEF §6.2) ----
 [whisper]

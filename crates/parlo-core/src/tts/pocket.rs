@@ -21,21 +21,19 @@ use std::sync::mpsc::sync_channel;
 pub const MODEL_REV: &str = "575d1437";
 
 /// (id, label, language code). English voices come with the English model, Spanish with the Spanish model.
-pub const VOICES: [(&str, &str, &str); 22] = [
+pub const VOICES: [(&str, &str, &str); 21] = [
     ("alba", "Alba", "en"),
     ("anna", "Anna", "en"),
     ("azelma", "Azelma", "en"),
     ("bill_boerst", "Bill Boerst", "en"),
     ("caro_davy", "Caro Davy", "en"),
     ("charles", "Charles", "en"),
-    ("cosette", "Cosette", "en"),
     ("eponine", "Eponine", "en"),
     ("eve", "Eve", "en"),
     ("fantine", "Fantine", "en"),
     ("george", "George", "en"),
     ("jane", "Jane", "en"),
     ("javert", "Javert", "en"),
-    ("jean", "Jean", "en"),
     ("marius", "Marius", "en"),
     ("mary", "Mary", "en"),
     ("michael", "Michael", "en"),
@@ -44,6 +42,7 @@ pub const VOICES: [(&str, &str, &str); 22] = [
     ("stuart_bell", "Stuart Bell", "en"),
     ("vera", "Vera", "en"),
     ("lola", "Lola", "es"),
+    ("enrique", "Enrique", "es"),
 ];
 /// Kyutai's default for every shipped model ("0.3 beats 0.7 on WER and UTMOS", human evals agreed).
 const TEMPERATURE: f32 = 0.3;

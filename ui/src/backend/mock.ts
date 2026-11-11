@@ -58,14 +58,12 @@ const VOICES: Array<[string, string, string]> = [
   ['bill_boerst', 'Bill Boerst', 'en'],
   ['caro_davy', 'Caro Davy', 'en'],
   ['charles', 'Charles', 'en'],
-  ['cosette', 'Cosette', 'en'],
   ['eponine', 'Eponine', 'en'],
   ['eve', 'Eve', 'en'],
   ['fantine', 'Fantine', 'en'],
   ['george', 'George', 'en'],
   ['jane', 'Jane', 'en'],
   ['javert', 'Javert', 'en'],
-  ['jean', 'Jean', 'en'],
   ['marius', 'Marius', 'en'],
   ['mary', 'Mary', 'en'],
   ['michael', 'Michael', 'en'],
@@ -74,6 +72,7 @@ const VOICES: Array<[string, string, string]> = [
   ['stuart_bell', 'Stuart Bell', 'en'],
   ['vera', 'Vera', 'en'],
   ['lola', 'Lola', 'es'],
+  ['enrique', 'Enrique', 'es'],
 ]
 
 const SAMPLE_PARAGRAPHS = [

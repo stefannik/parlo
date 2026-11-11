@@ -71,7 +71,7 @@ def fetch(url: str, dest: Path, size: int, sha: str) -> bool:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", default="pockettts,whisper,vad")
+    ap.add_argument("--only", default="pockettts,pockettts_voices,whisper,vad")
     ap.add_argument("--match", default="", help="only files whose name contains this substring")
     ap.add_argument("--verify-only", action="store_true")
     ap.add_argument("--list", action="store_true")
@@ -81,8 +81,21 @@ def main():
     for g in groups:
         if g == "fixtures":
             print("note: 'fixtures' are produced by scripts/gen-fixtures.sh, skipping", file=sys.stderr)
+    derived = [v for g in groups if g in man for v in man[g].get("voice", [])]
     groups = [g for g in groups if g in man and "file" in man[g]]
     bad = 0
+    for v in derived:  # Parlo's own voice states: made by scripts/export-voices.py, never downloaded (DECISIONS C-028)
+        dest = MODELS / "pockettts" / v["dest"]
+        rel = dest.relative_to(MODELS)
+        if a.match and a.match not in dest.name:
+            continue
+        if a.list:
+            print(f"{'voices':10s} {v['size']:>12d} {rel}")
+        elif v["sha256"] and verified(dest, v["size"], v["sha256"]):
+            print(f"ok      {rel}")
+        else:
+            print(f"MISSING/BAD {rel}  (make it with: uv run --python 3.12 --with pocket-tts==3.3.0 scripts/export-voices.py)")
+            bad += 1
     for g, url, dest, size, sha in entries(man, groups):
         if a.match and a.match not in dest.name:
             continue

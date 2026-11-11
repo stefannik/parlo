@@ -334,7 +334,7 @@ function pick<T extends string>(e: Event): T {
                   <div v-for="m in app.info?.models" :key="m.name" class="model"><span>{{ m.name }}</span><span class="muted small">{{ m.present ? formatBytes(m.size_bytes) : 'missing' }}</span></div>
                 </dd>
               </dl>
-              <p class="muted small">Speech recognition: Whisper (OpenAI, MIT) via whisper.cpp · Voice activity: Silero VAD (MIT) · Speech synthesis: Kyutai PocketTTS (CC-BY 4.0, model attribution: Kyutai) · Candle (Apache-2.0/MIT).</p>
+              <p class="muted small">Speech recognition: Whisper (OpenAI, MIT) via whisper.cpp · Voice activity: Silero VAD (MIT) · Speech synthesis: Kyutai PocketTTS (CC-BY 4.0, model attribution: Kyutai); Spanish voice Enrique from Kyutai's Unmute Voice Donation Project (CC0) · Candle (Apache-2.0/MIT).</p>
               <button type="button" class="btn" data-testid="copy-diagnostics" @click="copyDiagnostics"><Icon name="copy" :size="16" /> Copy diagnostics</button>
             </div>
           </template>

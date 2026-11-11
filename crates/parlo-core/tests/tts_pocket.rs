@@ -76,8 +76,8 @@ fn all_voices_are_on_disk_and_listed_with_their_language() {
         .map(|(id, _, lang)| (id.to_string(), lang.to_string()))
         .collect();
     assert_eq!(got, want);
-    assert_eq!(got.len(), 22);
-    assert_eq!(got.iter().filter(|(_, l)| l == "en").count(), 21);
+    assert_eq!(got.len(), 21);
+    assert_eq!(got.iter().filter(|(_, l)| l == "en").count(), 19);
     assert_eq!(e.sample_rate(), 24_000);
     assert!(e
         .voices()
@@ -138,54 +138,55 @@ fn abort_stops_synthesis_quickly() {
 }
 
 #[test]
-fn spanish_voice_speaks_spanish_and_switching_languages_keeps_both_working() {
+fn spanish_voices_speak_spanish_and_switching_languages_keeps_both_working() {
     let mut e = engine();
-    let es = speak(
-        &mut e,
-        "Hola, esta es una prueba rápida de la nueva voz en español.",
-        "lola",
-        Quality::Standard,
-    );
-    let secs = es.len() as f64 / 24_000.0;
-    assert!((2.5..9.0).contains(&secs), "{secs:.1}s");
-    // back to English (the Spanish model replaced the English one in memory; it must reload transparently)
-    let en = speak(
-        &mut e,
-        "This is a short English sentence.",
-        "george",
-        Quality::Standard,
-    );
-    assert!(en.len() as f64 / 24_000.0 > 1.5);
     let mut w = WhisperEngine::load(
         &model("whisper/ggml-small-q8_0.bin"),
         WhisperConfig::default(),
     )
     .unwrap();
-    let mut rs = StreamResampler::new(24_000, 16_000).unwrap();
-    let mut out = Vec::new();
-    rs.process(&es, &mut out).unwrap();
-    rs.finish(&mut out).unwrap();
-    let t = w
-        .transcribe(
-            &out,
-            &TranscribeOpts {
-                language: Some("es".into()),
-                initial_prompt: None,
-                threads: 4,
-            },
-            &Arc::new(AtomicBool::new(false)),
-        )
-        .unwrap();
-    let heard = words(
-        &t.segments
-            .iter()
-            .map(|s| s.text.as_str())
-            .collect::<Vec<_>>()
-            .join(" "),
-    );
-    let want = words("Hola, esta es una prueba rápida de la nueva voz en español.");
-    let hits = want.iter().filter(|w| heard.contains(w)).count();
-    assert!(hits as f64 >= 0.8 * want.len() as f64, "heard {heard:?}");
+    const TEXT: &str = "Hola, esta es una prueba rápida de la nueva voz en español.";
+    for voice in ["lola", "enrique"] {
+        let es = speak(&mut e, TEXT, voice, Quality::Standard);
+        let secs = es.len() as f64 / 24_000.0;
+        assert!((2.5..9.0).contains(&secs), "{voice}: {secs:.1}s");
+        // back to English (the Spanish model replaced the English one in memory; it must reload transparently)
+        let en = speak(
+            &mut e,
+            "This is a short English sentence.",
+            "george",
+            Quality::Standard,
+        );
+        assert!(en.len() as f64 / 24_000.0 > 1.5);
+        let mut rs = StreamResampler::new(24_000, 16_000).unwrap();
+        let mut out = Vec::new();
+        rs.process(&es, &mut out).unwrap();
+        rs.finish(&mut out).unwrap();
+        let t = w
+            .transcribe(
+                &out,
+                &TranscribeOpts {
+                    language: Some("es".into()),
+                    initial_prompt: None,
+                    threads: 4,
+                },
+                &Arc::new(AtomicBool::new(false)),
+            )
+            .unwrap();
+        let heard = words(
+            &t.segments
+                .iter()
+                .map(|s| s.text.as_str())
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
+        let want = words(TEXT);
+        let hits = want.iter().filter(|w| heard.contains(w)).count();
+        assert!(
+            hits as f64 >= 0.8 * want.len() as f64,
+            "{voice}: heard {heard:?}"
+        );
+    }
 }
 
 #[test]

@@ -1,12 +1,20 @@
 # Parlo — STATUS
 
-_Last updated: 2026-10-22 (after a normal quit, launch opens ready to record — C-026)_
+_Last updated: 2026-11-11 (European Spanish voice Enrique; Cosette and Jean dropped — C-028)_
 
 ## Needs owner
 _(nothing blocking so far. All needed domains are reachable: HF (incl. LFS/xethub), download.pytorch.org, GitHub assets, crates/npm/PyPI.)_
 
 ## Current phase
 **Cloud phases 0–5 complete, Mac session 1 nearly done (below).** Newest feature: **Transcribe from URL** (2026-10-18/19).
+
+# European Spanish voice Enrique (2026-11-11) — DECISIONS C-028
+Preparing a public GitHub release. New Spanish voice **Enrique** (Spain accent, from Kyutai's CC0 voice donations) next to
+Lola; **Cosette** and **Jean** removed (CC-BY-NC sources). Voices: 19 English + 2 Spanish. Enrique's voice state is made by
+`uv run --python 3.12 --with pocket-tts==3.3.0 scripts/export-voices.py --pin` (needs Kyutai's gated voice-cloning weights:
+accept the terms at huggingface.co/kyutai/pocket-tts, `hf auth login`), pinned in `models/manifest.toml [pockettts_voices]`,
+verified by `fetch-models.sh`. Spanish TTS test now covers both voices. Still to do: export + pin on the Mac, preview
+`resources/voice-previews/enrique.mp3`, rebuild the app for the owner's listening check; then README with screenshots for the release.
 
 # Launch after quit (2026-10-22) — DECISIONS C-026
 Owner feedback from daily use: after ⌘Q, the next launch should be ready to record, not show yesterday's transcript. A normal
